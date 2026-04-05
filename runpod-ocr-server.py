@@ -31,48 +31,61 @@ from flask_cors import CORS
 from PIL import Image
 import numpy as np
 
-# ============ OCR ENGINE (Chandra OCR 2) ============
+# ============ OCR ENGINE (Chandra OCR 2) — BATCH MODE ============
 
-_ocr_model = None
+_ocr_manager = None   # InferenceManager singleton
+_BatchInputItem = None  # Classe para batch
 
-def get_ocr():
+def get_ocr_manager():
     """Lazy-load Chandra OCR 2 (4B params) — primeiro call demora ~30s"""
-    global _ocr_model
-    if _ocr_model is None:
+    global _ocr_manager, _BatchInputItem
+    if _ocr_manager is None:
         print("🔄 Carregando Chandra OCR 2 (4B)... isso leva ~30s na primeira vez")
         t0 = time.time()
         try:
             from chandra.model import InferenceManager
             from chandra.model.schema import BatchInputItem
-
-            manager = InferenceManager(method="hf")
-
-            def ocr_fn(img):
-                results = manager.generate([BatchInputItem(image=img, prompt_type="ocr")])
-                return results[0].raw or results[0].markdown or ""
+            _BatchInputItem = BatchInputItem
+            _ocr_manager = InferenceManager(method="hf")
 
             # Warmup com imagem dummy
             dummy = Image.new('RGB', (100, 30), (255, 255, 255))
-            ocr_fn(dummy)
-            _ocr_model = ocr_fn
+            _ocr_manager.generate([BatchInputItem(image=dummy, prompt_type="ocr")])
             print(f"✅ Chandra OCR 2 pronto em {time.time()-t0:.1f}s")
         except ImportError as e:
-            print(f"⚠️  chandra-ocr não disponível ({e}), usando fallback pytesseract")
-            try:
-                import pytesseract
-                _ocr_model = lambda img: pytesseract.image_to_string(img).strip()
-                print("✅ Fallback pytesseract ativo")
-            except ImportError:
-                print("❌ Nenhum OCR disponível!")
-                _ocr_model = lambda img: ""
-    return _ocr_model
+            print(f"⚠️  chandra-ocr não disponível ({e})")
+            _ocr_manager = None
+    return _ocr_manager
 
 
-def ocr_crop(img_pil, region, mode='text'):
+def ocr_batch(images):
     """
-    Recorta região da imagem e faz OCR.
-    region: {x, y, w, h} em pixels OU {x, y, w, h} como frações (0-1)
-    mode: 'text' | 'number' | 'card'
+    OCR em batch: recebe lista de PIL Images, retorna lista de strings.
+    Muito mais rápido que chamar individualmente (~3-5x speedup).
+    """
+    manager = get_ocr_manager()
+    if not manager or not _BatchInputItem or not images:
+        return [''] * len(images)
+
+    batch_items = [_BatchInputItem(image=img, prompt_type="ocr") for img in images]
+    try:
+        results = manager.generate(batch_items)
+        return [r.raw or r.markdown or "" for r in results]
+    except Exception as e:
+        print(f"  Batch OCR error: {e}")
+        return [''] * len(images)
+
+
+def ocr_single(img):
+    """OCR de uma única imagem (para endpoints simples como /ocr-test)."""
+    results = ocr_batch([img])
+    return results[0] if results else ''
+
+
+def crop_region(img_pil, region):
+    """
+    Recorta região da imagem. Retorna PIL Image.
+    region: {x, y, w, h} como frações (0-1) ou pixels.
     """
     W, H = img_pil.size
     x, y, w, h = region['x'], region['y'], region['w'], region['h']
@@ -96,14 +109,13 @@ def ocr_crop(img_pil, region, mode='text'):
         scale = max(3, 100 // max(w, 1))
         cropped = cropped.resize((w * scale, h * scale), Image.LANCZOS)
 
-    ocr_fn = get_ocr()
-    try:
-        result = ocr_fn(cropped)
-        text = result if isinstance(result, str) else str(result)
-        text = text.strip()
-    except Exception as e:
-        print(f"  OCR error: {e}")
-        return '' if mode == 'text' else 0
+    return cropped
+
+
+def ocr_crop(img_pil, region, mode='text'):
+    """OCR de uma região (compat — para endpoints avulsos). Usa batch de 1."""
+    cropped = crop_region(img_pil, region)
+    text = ocr_single(cropped)
 
     if mode == 'number':
         return parse_number(text)
@@ -387,12 +399,12 @@ def save_coords(coords):
 
 def analyze_table(img_pil):
     """
-    Análise completa da mesa de poker.
-    Retorna dados agrupados por seat ID (1-8).
-    Estrutura: { table: {...}, seats: [{id:1, ...}, {id:2, ...}, ...] }
+    Análise completa da mesa — BATCH OCR.
+    Coleta TODAS as regiões primeiro, faz UMA chamada batch ao Chandra,
+    depois parseia os resultados. ~3-5x mais rápido que OCR sequencial.
     """
     coords = active_coords or load_coords()
-    num_seats = coords.get('seats', 8)
+    num_seats = int(coords.get('seats', 8))
     seat_regions = coords.get('seat_regions', [])
     t0 = time.time()
     timings = {}
@@ -404,45 +416,10 @@ def analyze_table(img_pil):
         'num_active': 0, 'last_action': '', 'bet_to_call': 0,
         'tournament': True
     }
-    seats = []
 
-    # ── 1. Blinds ──
-    t1 = time.time()
-    if coords.get('blinds'):
-        raw = ocr_crop(img_pil, coords['blinds'], 'text')
-        m = re.search(r'(\d[\d,.]*)\s*[|/]\s*(\d[\d,.]*)', raw)
-        if m:
-            table['blinds'] = f"{m.group(1)}/{m.group(2)}"
-        elif raw:
-            table['blinds'] = raw
-        print(f"  Blinds: {table['blinds']}")
-    timings['blinds'] = f"{(time.time()-t1)*1000:.0f}ms"
-
-    # ── 2. Pot ──
-    t1 = time.time()
-    if coords.get('pot'):
-        raw = ocr_crop(img_pil, coords['pot'], 'text')
-        m = re.search(r'(\d[\d,.]+)', raw.replace(' ', ''))
-        if m:
-            table['pot'] = parse_number(m.group(1))
-        print(f"  Pot: {table['pot']}")
-    timings['pot'] = f"{(time.time()-t1)*1000:.0f}ms"
-
-    # ── 3. Board ──
-    t1 = time.time()
-    for i, card_region in enumerate(coords.get('board', [])):
-        if not card_region:
-            continue
-        if detect_seat_active(img_pil, card_region):
-            card = ocr_crop(img_pil, card_region, 'card')
-            if card:
-                table['board'].append(card)
-                print(f"  Board {i+1}: {card}")
-    n_board = len(table['board'])
-    table['street'] = {0: 'preflop', 3: 'flop', 4: 'turn', 5: 'river'}.get(n_board, 'preflop')
-    timings['board'] = f"{(time.time()-t1)*1000:.0f}ms"
-
-    # ── 4. Dealer detection ──
+    # ════════════════════════════════════════════
+    # FASE 1: Dealer detection (não precisa OCR)
+    # ════════════════════════════════════════════
     t1 = time.time()
     dealer_regions = [s.get('dealer') for s in seat_regions]
     btn_seat_idx = detect_dealer_position(img_pil, dealer_regions)
@@ -450,8 +427,125 @@ def analyze_table(img_pil):
     timings['dealer'] = f"{(time.time()-t1)*1000:.0f}ms"
     print(f"  Dealer: seat {table['btn_seat']}")
 
-    # ── 5. OCR de todos os seats (1-8) ──
+    # ════════════════════════════════════════════
+    # FASE 2: Detectar seats ativos (pixel check, sem OCR)
+    # ════════════════════════════════════════════
     t1 = time.time()
+    seat_active = []
+    for i, sr in enumerate(seat_regions):
+        is_active = True
+        if sr.get('cards'):
+            is_active = detect_seat_active(img_pil, sr['cards'])
+        seat_active.append(is_active)
+    timings['detect'] = f"{(time.time()-t1)*1000:.0f}ms"
+
+    # ════════════════════════════════════════════
+    # FASE 3: Coletar TODAS as regiões para batch OCR
+    # ════════════════════════════════════════════
+    t1 = time.time()
+    batch_images = []  # lista de PIL Images
+    batch_keys = []    # lista de (tipo, índice) para mapear resultado
+
+    # 3a. Blinds
+    if coords.get('blinds'):
+        batch_images.append(crop_region(img_pil, coords['blinds']))
+        batch_keys.append(('blinds', 0))
+
+    # 3b. Pot
+    if coords.get('pot'):
+        batch_images.append(crop_region(img_pil, coords['pot']))
+        batch_keys.append(('pot', 0))
+
+    # 3c. Board cards (só se região tem conteúdo visível)
+    board_indices = []
+    for i, card_region in enumerate(coords.get('board', [])):
+        if card_region and detect_seat_active(img_pil, card_region):
+            batch_images.append(crop_region(img_pil, card_region))
+            batch_keys.append(('board', i))
+            board_indices.append(i)
+
+    # 3d. Seats ativos: nome, stack, cards (2x), bet, bounty
+    for i, sr in enumerate(seat_regions):
+        if not seat_active[i]:
+            continue
+
+        if sr.get('name'):
+            batch_images.append(crop_region(img_pil, sr['name']))
+            batch_keys.append(('name', i))
+
+        if sr.get('stack'):
+            batch_images.append(crop_region(img_pil, sr['stack']))
+            batch_keys.append(('stack', i))
+
+        if sr.get('cards'):
+            cr = sr['cards']
+            half_w = cr['w'] / 2
+            c1_r = {'x': cr['x'], 'y': cr['y'], 'w': half_w, 'h': cr['h']}
+            c2_r = {'x': cr['x'] + half_w, 'y': cr['y'], 'w': half_w, 'h': cr['h']}
+            batch_images.append(crop_region(img_pil, c1_r))
+            batch_keys.append(('card1', i))
+            batch_images.append(crop_region(img_pil, c2_r))
+            batch_keys.append(('card2', i))
+
+        if sr.get('bet'):
+            batch_images.append(crop_region(img_pil, sr['bet']))
+            batch_keys.append(('bet', i))
+
+        if sr.get('bounty'):
+            batch_images.append(crop_region(img_pil, sr['bounty']))
+            batch_keys.append(('bounty', i))
+
+    timings['crop'] = f"{(time.time()-t1)*1000:.0f}ms"
+    print(f"  Batch: {len(batch_images)} regiões coletadas")
+
+    # ════════════════════════════════════════════
+    # FASE 4: OCR BATCH — UMA chamada para tudo
+    # ════════════════════════════════════════════
+    t1 = time.time()
+    batch_results = ocr_batch(batch_images)
+    timings['ocr_batch'] = f"{(time.time()-t1)*1000:.0f}ms"
+    print(f"  OCR batch: {len(batch_results)} resultados em {(time.time()-t1)*1000:.0f}ms")
+
+    # ════════════════════════════════════════════
+    # FASE 5: Parsear resultados do batch
+    # ════════════════════════════════════════════
+    t1 = time.time()
+
+    # Mapear resultados por chave
+    result_map = {}
+    for idx, (key, seat_idx) in enumerate(batch_keys):
+        text = batch_results[idx].strip() if idx < len(batch_results) else ''
+        result_map.setdefault(key, {})[seat_idx] = text
+
+    # Blinds
+    if 'blinds' in result_map:
+        raw = result_map['blinds'].get(0, '')
+        m = re.search(r'(\d[\d,.]*)\s*[|/]\s*(\d[\d,.]*)', raw)
+        if m:
+            table['blinds'] = f"{m.group(1)}/{m.group(2)}"
+        elif raw:
+            table['blinds'] = raw
+        print(f"  Blinds: {table['blinds']}")
+
+    # Pot
+    if 'pot' in result_map:
+        raw = result_map['pot'].get(0, '').replace(' ', '')
+        m = re.search(r'(\d[\d,.]+)', raw)
+        if m:
+            table['pot'] = parse_number(m.group(1))
+        print(f"  Pot: {table['pot']}")
+
+    # Board
+    for i in board_indices:
+        raw = result_map.get('board', {}).get(i, '')
+        card = parse_card_text(raw)
+        if card:
+            table['board'].append(card)
+            print(f"  Board {i+1}: {card}")
+    n_board = len(table['board'])
+    table['street'] = {0: 'preflop', 3: 'flop', 4: 'turn', 5: 'river'}.get(n_board, 'preflop')
+
+    # Seats
     pos_maps = {
         2: ['BTN','BB'], 3: ['BTN','SB','BB'], 4: ['BTN','SB','BB','UTG'],
         5: ['BTN','SB','BB','UTG','CO'], 6: ['BTN','SB','BB','UTG','HJ','CO'],
@@ -460,76 +554,63 @@ def analyze_table(img_pil):
         9: ['BTN','SB','BB','UTG','UTG+1','LJ','MP','HJ','CO'],
     }
     pos_map = pos_maps.get(num_seats, pos_maps[8])
+    seats = []
 
     for i, sr in enumerate(seat_regions):
         seat_id = i + 1
         is_hero = (i == 0)
-
         seat = {
             'id': seat_id, 'name': '', 'stack': 0, 'cards': ['', ''],
             'position': '?', 'bet': 0, 'bounty': '',
-            'is_hero': is_hero, 'active': False, 'action': '',
+            'is_hero': is_hero, 'active': seat_active[i], 'action': '',
         }
 
-        # Detectar se seat está ativo
-        is_active = True
-        if sr.get('cards'):
-            is_active = detect_seat_active(img_pil, sr['cards'])
-        seat['active'] = is_active
-
-        if not is_active:
+        if not seat_active[i]:
             seats.append(seat)
             continue
 
         # Nome
-        if sr.get('name'):
-            raw = ocr_crop(img_pil, sr['name'], 'text')
-            if raw and len(raw) > 1:
-                seat['name'] = raw
-            else:
-                seat['name'] = 'Hero' if is_hero else f'Player{seat_id}'
-            if 'sitting' in seat['name'].lower() or 'sit out' in seat['name'].lower():
-                seat['active'] = False
-                seats.append(seat)
-                continue
-            print(f"  Seat {seat_id} name: {seat['name']}")
+        raw_name = result_map.get('name', {}).get(i, '')
+        if raw_name and len(raw_name) > 1:
+            seat['name'] = raw_name
+        else:
+            seat['name'] = 'Hero' if is_hero else f'Player{seat_id}'
+        if 'sitting' in seat['name'].lower() or 'sit out' in seat['name'].lower():
+            seat['active'] = False
+            seats.append(seat)
+            continue
+        print(f"  Seat {seat_id} name: {seat['name']}")
 
         # Stack
-        if sr.get('stack'):
-            seat['stack'] = ocr_crop(img_pil, sr['stack'], 'number')
-            print(f"  Seat {seat_id} stack: {seat['stack']}")
+        raw_stack = result_map.get('stack', {}).get(i, '')
+        seat['stack'] = parse_number(raw_stack)
+        print(f"  Seat {seat_id} stack: {seat['stack']}")
 
-        # Cards (dividir região ao meio: carta 1 e carta 2)
-        if sr.get('cards') and is_active:
-            cr = sr['cards']
-            half_w = cr['w'] / 2
-            c1_r = {'x': cr['x'], 'y': cr['y'], 'w': half_w, 'h': cr['h']}
-            c2_r = {'x': cr['x'] + half_w, 'y': cr['y'], 'w': half_w, 'h': cr['h']}
-            c1 = ocr_crop(img_pil, c1_r, 'card')
-            c2 = ocr_crop(img_pil, c2_r, 'card')
-            seat['cards'] = [c1, c2]
-            if c1 or c2:
-                print(f"  Seat {seat_id} cards: {c1} {c2}")
+        # Cards
+        c1_raw = result_map.get('card1', {}).get(i, '')
+        c2_raw = result_map.get('card2', {}).get(i, '')
+        seat['cards'] = [parse_card_text(c1_raw), parse_card_text(c2_raw)]
+        if seat['cards'][0] or seat['cards'][1]:
+            print(f"  Seat {seat_id} cards: {seat['cards']}")
 
         # Bet
-        if sr.get('bet'):
-            seat['bet'] = ocr_crop(img_pil, sr['bet'], 'number')
-            if seat['bet'] > 0:
-                print(f"  Seat {seat_id} bet: {seat['bet']}")
+        raw_bet = result_map.get('bet', {}).get(i, '')
+        seat['bet'] = parse_number(raw_bet)
+        if seat['bet'] > 0:
+            print(f"  Seat {seat_id} bet: {seat['bet']}")
 
         # Bounty
-        if sr.get('bounty'):
-            seat['bounty'] = ocr_crop(img_pil, sr['bounty'], 'text')
+        seat['bounty'] = result_map.get('bounty', {}).get(i, '')
 
-        # Posição poker (baseado no dealer)
+        # Posição poker
         if btn_seat_idx >= 0:
             seat['position'] = pos_map[(num_seats - btn_seat_idx + i) % num_seats]
 
         seats.append(seat)
 
-    timings['seats'] = f"{(time.time()-t1)*1000:.0f}ms"
+    timings['parse'] = f"{(time.time()-t1)*1000:.0f}ms"
 
-    # ── 6. Deduzir ações ──
+    # ── Deduzir ações ──
     active_seats = [s for s in seats if s['active']]
     table['num_active'] = len(active_seats)
 
@@ -541,7 +622,7 @@ def analyze_table(img_pil):
         if bettor:
             bettor['action'] = f"Bet {int(max_bet):,}"
 
-    # ── 7. Ordenar seats por posição poker ──
+    # ── Ordenar seats por posição poker ──
     if btn_seat_idx >= 0:
         for s in seats:
             s['_po'] = pos_map.index(s['position']) if s['position'] in pos_map else 99
@@ -549,9 +630,9 @@ def analyze_table(img_pil):
         for s in seats:
             s.pop('_po', None)
 
-    # ── 8. Log ──
+    # ── Log final ──
     elapsed = time.time() - t0
-    print(f"\n✅ Análise completa em {elapsed:.1f}s")
+    print(f"\n✅ Análise completa em {elapsed:.1f}s ({len(batch_images)} OCR batch)")
     print(f"   Board: {table['board']} ({table['street']})")
     print(f"   Pot: {table['pot']} | Blinds: {table['blinds']} | BTN: seat {table['btn_seat']}")
     print(f"   Seats ativos: {table['num_active']}")
@@ -598,7 +679,7 @@ def health():
         'gpu': gpu_name,
         'preset': coords.get('name', 'custom'),
         'seats': coords.get('seats', 8),
-        'ocr_ready': _ocr_model is not None,
+        'ocr_ready': _ocr_manager is not None,
     })
 
 
@@ -607,7 +688,7 @@ def warmup():
     if not check_auth():
         return jsonify({'error': 'unauthorized'}), 401
     t0 = time.time()
-    get_ocr()
+    get_ocr_manager()
     return jsonify({'status': 'ready', 'elapsed': f"{time.time()-t0:.1f}s"})
 
 
@@ -633,7 +714,7 @@ def analyze():
     # Override dealer se frontend enviou manualmente
     if 'btn_seat_idx' in data and data['btn_seat_idx'] >= 0:
         coords_data = active_coords or load_coords()
-        num_seats = coords_data.get('seats', 8)
+        num_seats = int(coords_data.get('seats', 8))
         btn_idx = data['btn_seat_idx']
         pos_maps = {
             2: ['BTN','BB'], 3: ['BTN','SB','BB'], 4: ['BTN','SB','BB','UTG'],
@@ -694,7 +775,8 @@ def ocr_test():
     try:
         img_pil = base64_to_pil(data['image'])
         mode = data.get('mode', 'text')
-        result = ocr_crop(img_pil, data['region'], mode)
+        cropped = crop_region(img_pil, data['region'])
+        result = ocr_single(cropped)
         return jsonify({'text': str(result), 'mode': mode})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -723,7 +805,7 @@ if __name__ == '__main__':
     load_coords()
 
     print("\n🔄 Pré-carregando Chandra OCR 2...")
-    get_ocr()
+    get_ocr_manager()
 
     port = int(os.environ.get('PORT', 8080))
     print(f"\n🚀 Servidor rodando em http://0.0.0.0:{port}")
