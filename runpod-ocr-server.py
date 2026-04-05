@@ -20,6 +20,7 @@ import json
 import time
 import base64
 import io
+import math
 
 # ── Fix cuDNN: incompatível com torch 2.5.1 downgrade no RunPod ──
 # Ainda usa GPU (CUDA) para compute, só desabilita cuDNN para conv ops
@@ -161,10 +162,12 @@ def parse_number(text):
             clean = clean.replace(',', '')
     # Decimal (centavos/bounty) vs milhar
     if re.match(r'^\d+\.\d{1,2}$', clean):
-        return float(clean)
+        val = float(clean)
+        return val if math.isfinite(val) else 0
     clean = clean.replace('.', '')
     try:
-        return float(clean) if clean else 0
+        val = float(clean) if clean else 0
+        return val if math.isfinite(val) else 0
     except:
         return 0
 
@@ -686,7 +689,7 @@ def analyze_table(img_pil):
     table['num_active'] = len(active_seats)
 
     max_bet = max((s['bet'] for s in active_seats), default=0)
-    if max_bet > 0:
+    if max_bet > 0 and math.isfinite(max_bet):
         bettor = next((s for s in active_seats if s['bet'] == max_bet), None)
         table['last_action'] = f"Bet {int(max_bet):,}"
         table['bet_to_call'] = max_bet
