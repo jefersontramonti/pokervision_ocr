@@ -38,7 +38,7 @@ def get_ocr():
             manager = InferenceManager(method="hf")
 
             def ocr_fn(img):
-                results = manager.generate([BatchInputItem(image=img)])
+                results = manager.generate([BatchInputItem(image=img, prompt_type="ocr")])
                 return results[0].raw or results[0].markdown or ""
 
             # Warmup com imagem dummy
