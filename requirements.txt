@@ -1,3 +1,9 @@
+# ============================================================
+# Poker Vision OCR Server — Dependências
+# NOTA: torch NÃO está aqui propositalmente!
+# O setup.sh instala torch 2.5.1+cu124 separadamente
+# para evitar conflito com CUDA 12.4 do RunPod.
+# ============================================================
 chandra-ocr[hf]>=0.2.0
 flask>=3.0
 flask-cors>=4.0

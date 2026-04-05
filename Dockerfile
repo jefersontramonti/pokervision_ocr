@@ -1,6 +1,6 @@
 # ============================================================
 # Poker Vision OCR Server — RunPod Docker Image
-# Base: CUDA 12.4 + Python 3.11
+# Base: CUDA 12.4 + Python 3.11 (compatível com RTX A4500)
 # ============================================================
 
 FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
@@ -15,14 +15,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Instalar dependências Python (sem torch — já vem na imagem base)
+# Copiar e executar setup (instala deps + corrige torch)
+COPY setup.sh .
 COPY requirements.txt .
-RUN pip install --ignore-installed --no-cache-dir -r requirements.txt
-
-# Fixar torch para versão compatível cu124
-RUN pip install torch==2.5.1 torchvision==0.20.1 \
-    --index-url https://download.pytorch.org/whl/cu124 \
-    --no-deps --force-reinstall --no-cache-dir
+RUN chmod +x setup.sh && ./setup.sh
 
 # Copiar código do servidor
 COPY runpod-ocr-server.py .

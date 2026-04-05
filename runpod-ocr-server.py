@@ -1,5 +1,5 @@
 """
-Poker Vision OCR Server — RunPod (RTX 3090)
+Poker Vision OCR Server — RunPod (GPU)
 Abordagem: Chandra OCR puro + coordenadas fixas + lógica completa server-side.
 O HTML é apenas um viewer: captura screenshot → envia → exibe resultado.
 
@@ -7,7 +7,11 @@ Endpoints:
   GET  /health          → status do servidor
   POST /analyze         → análise completa da mesa
   POST /update-coords   → atualizar coordenadas (calibração)
+  GET  /get-coords      → retorna coordenadas ativas
   POST /ocr-test        → testar OCR numa região específica
+  POST /warmup          → pré-carregar modelo OCR
+  GET  /presets          → listar presets disponíveis
+  POST /presets/<name>   → carregar preset específico
 """
 
 import os
@@ -16,8 +20,12 @@ import json
 import time
 import base64
 import io
+
+# ── Fix cuDNN: incompatível com torch 2.5.1 downgrade no RunPod ──
+# Ainda usa GPU (CUDA) para compute, só desabilita cuDNN para conv ops
 import torch
-torch.backends.cudnn.enabled = False  # compatibilidade cu124 no RunPod
+torch.backends.cudnn.enabled = False
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from PIL import Image
@@ -204,10 +212,8 @@ def detect_seat_active(img_pil, region):
 def detect_dealer_position(img_pil, dealer_regions):
     """
     Detecta em qual seat está o dealer button "D".
-    Tenta OCR em cada região de dealer — a que retornar "D" é o BTN.
-    Fallback: detectar círculo amarelo por cor.
+    Detectar círculo amarelo por cor (mais confiável que OCR para button pequeno).
     """
-    ocr_fn = get_ocr()
     best_seat = -1
     best_score = 0
 
@@ -225,7 +231,7 @@ def detect_dealer_position(img_pil, dealer_regions):
         cropped = img_pil.crop((x, y, x + w, y + h))
         arr = np.array(cropped)
 
-        # Método 1: Detectar círculo amarelo/dourado do dealer button
+        # Detectar círculo amarelo/dourado do dealer button
         if len(arr.shape) == 3:
             r, g, b = arr[:,:,0].astype(float), arr[:,:,1].astype(float), arr[:,:,2].astype(float)
             # Amarelo/dourado: R alto, G alto, B baixo
@@ -261,7 +267,6 @@ PRESETS = {
         'pot': {'x': 0.33, 'y': 0.28, 'w': 0.34, 'h': 0.06},
 
         # ── Board cards (5 posições — flop/turn/river) ──
-        # Mapeado do screenshot 1: 7h Qd 5h ocupam ~30-56% horizontal, ~33-55% vertical
         'board': [
             {'x': 0.29, 'y': 0.33, 'w': 0.09, 'h': 0.19},
             {'x': 0.38, 'y': 0.33, 'w': 0.09, 'h': 0.19},
@@ -284,7 +289,7 @@ PRESETS = {
                 'dealer':  {'x': 0.40, 'y': 0.67, 'w': 0.04, 'h': 0.05},
                 'bounty':  {'x': 0.45, 'y': 0.67, 'w': 0.10, 'h': 0.03},
             },
-            # Seat 2: ↙ — terryu7575! (bottom-left)
+            # Seat 2: ↙ — (bottom-left)
             {
                 'name':    {'x': 0.14, 'y': 0.77, 'w': 0.15, 'h': 0.04},
                 'stack':   {'x': 0.14, 'y': 0.81, 'w': 0.15, 'h': 0.05},
@@ -293,7 +298,7 @@ PRESETS = {
                 'dealer':  {'x': 0.27, 'y': 0.69, 'w': 0.04, 'h': 0.05},
                 'bounty':  {'x': 0.14, 'y': 0.61, 'w': 0.08, 'h': 0.03},
             },
-            # Seat 3: ← — Munkh_ (left)
+            # Seat 3: ← — (left)
             {
                 'name':    {'x': 0.01, 'y': 0.53, 'w': 0.13, 'h': 0.04},
                 'stack':   {'x': 0.01, 'y': 0.57, 'w': 0.13, 'h': 0.05},
@@ -302,7 +307,7 @@ PRESETS = {
                 'dealer':  {'x': 0.12, 'y': 0.48, 'w': 0.04, 'h': 0.05},
                 'bounty':  {'x': 0.02, 'y': 0.36, 'w': 0.08, 'h': 0.03},
             },
-            # Seat 4: ↖ — ProCheatano (top-left)
+            # Seat 4: ↖ — (top-left)
             {
                 'name':    {'x': 0.16, 'y': 0.22, 'w': 0.16, 'h': 0.04},
                 'stack':   {'x': 0.16, 'y': 0.26, 'w': 0.16, 'h': 0.05},
@@ -311,7 +316,7 @@ PRESETS = {
                 'dealer':  {'x': 0.30, 'y': 0.27, 'w': 0.04, 'h': 0.05},
                 'bounty':  {'x': 0.18, 'y': 0.06, 'w': 0.08, 'h': 0.03},
             },
-            # Seat 5: ↑ — Dabrowski (top center)
+            # Seat 5: ↑ — (top center)
             {
                 'name':    {'x': 0.42, 'y': 0.12, 'w': 0.16, 'h': 0.04},
                 'stack':   {'x': 0.42, 'y': 0.16, 'w': 0.16, 'h': 0.05},
@@ -320,7 +325,7 @@ PRESETS = {
                 'dealer':  {'x': 0.41, 'y': 0.20, 'w': 0.04, 'h': 0.05},
                 'bounty':  {'x': 0.47, 'y': 0.03, 'w': 0.08, 'h': 0.03},
             },
-            # Seat 6: ↗ — PetinhoShowtime (top-right)
+            # Seat 6: ↗ — (top-right)
             {
                 'name':    {'x': 0.68, 'y': 0.22, 'w': 0.18, 'h': 0.04},
                 'stack':   {'x': 0.68, 'y': 0.26, 'w': 0.18, 'h': 0.05},
@@ -329,7 +334,7 @@ PRESETS = {
                 'dealer':  {'x': 0.66, 'y': 0.27, 'w': 0.04, 'h': 0.05},
                 'bounty':  {'x': 0.74, 'y': 0.06, 'w': 0.08, 'h': 0.03},
             },
-            # Seat 7: → — zhouxiaoyy (right)
+            # Seat 7: → — (right)
             {
                 'name':    {'x': 0.82, 'y': 0.53, 'w': 0.16, 'h': 0.04},
                 'stack':   {'x': 0.82, 'y': 0.57, 'w': 0.16, 'h': 0.05},
@@ -338,7 +343,7 @@ PRESETS = {
                 'dealer':  {'x': 0.82, 'y': 0.48, 'w': 0.04, 'h': 0.05},
                 'bounty':  {'x': 0.86, 'y': 0.36, 'w': 0.08, 'h': 0.03},
             },
-            # Seat 8: ↘ — Jiaobi (bottom-right)
+            # Seat 8: ↘ — (bottom-right)
             {
                 'name':    {'x': 0.72, 'y': 0.77, 'w': 0.16, 'h': 0.04},
                 'stack':   {'x': 0.72, 'y': 0.81, 'w': 0.16, 'h': 0.05},
@@ -353,7 +358,7 @@ PRESETS = {
 
 # Coordenadas ativas (carregadas do preset ou calibração manual)
 active_coords = None
-coords_file = os.path.join(os.path.dirname(__file__), 'coords.json')
+coords_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'coords.json')
 
 
 def load_coords():
@@ -399,7 +404,7 @@ def analyze_table(img_pil):
         'num_active': 0, 'last_action': '', 'bet_to_call': 0,
         'tournament': True
     }
-    seats = []  # [{id, name, stack, cards, position, bet, bounty, is_hero, active, action}]
+    seats = []
 
     # ── 1. Blinds ──
     t1 = time.time()
@@ -441,7 +446,7 @@ def analyze_table(img_pil):
     t1 = time.time()
     dealer_regions = [s.get('dealer') for s in seat_regions]
     btn_seat_idx = detect_dealer_position(img_pil, dealer_regions)
-    table['btn_seat'] = btn_seat_idx + 1 if btn_seat_idx >= 0 else -1  # 1-indexed
+    table['btn_seat'] = btn_seat_idx + 1 if btn_seat_idx >= 0 else -1
     timings['dealer'] = f"{(time.time()-t1)*1000:.0f}ms"
     print(f"  Dealer: seat {table['btn_seat']}")
 
@@ -457,20 +462,13 @@ def analyze_table(img_pil):
     pos_map = pos_maps.get(num_seats, pos_maps[8])
 
     for i, sr in enumerate(seat_regions):
-        seat_id = i + 1  # 1-indexed
+        seat_id = i + 1
         is_hero = (i == 0)
 
         seat = {
-            'id': seat_id,
-            'name': '',
-            'stack': 0,
-            'cards': ['', ''],
-            'position': '?',
-            'bet': 0,
-            'bounty': '',
-            'is_hero': is_hero,
-            'active': False,
-            'action': '',
+            'id': seat_id, 'name': '', 'stack': 0, 'cards': ['', ''],
+            'position': '?', 'bet': 0, 'bounty': '',
+            'is_hero': is_hero, 'active': False, 'action': '',
         }
 
         # Detectar se seat está ativo
@@ -490,7 +488,6 @@ def analyze_table(img_pil):
                 seat['name'] = raw
             else:
                 seat['name'] = 'Hero' if is_hero else f'Player{seat_id}'
-            # Sitting Out → inativo
             if 'sitting' in seat['name'].lower() or 'sit out' in seat['name'].lower():
                 seat['active'] = False
                 seats.append(seat)
@@ -536,7 +533,6 @@ def analyze_table(img_pil):
     active_seats = [s for s in seats if s['active']]
     table['num_active'] = len(active_seats)
 
-    # Maior bet = last_action
     max_bet = max((s['bet'] for s in active_seats), default=0)
     if max_bet > 0:
         bettor = next((s for s in active_seats if s['bet'] == max_bet), None)
@@ -545,21 +541,16 @@ def analyze_table(img_pil):
         if bettor:
             bettor['action'] = f"Bet {int(max_bet):,}"
 
-    # ── 7. Ordenar seats por posição poker (BTN→SB→BB→UTG...) mantendo o ID ──
+    # ── 7. Ordenar seats por posição poker ──
     if btn_seat_idx >= 0:
         for s in seats:
-            if s['position'] != '?':
-                s['pos_order'] = pos_map.index(s['position']) if s['position'] in pos_map else 99
-            else:
-                s['pos_order'] = 99
-        seats.sort(key=lambda s: s['pos_order'])
-        # Remover campo auxiliar
+            s['_po'] = pos_map.index(s['position']) if s['position'] in pos_map else 99
+        seats.sort(key=lambda s: s['_po'])
         for s in seats:
-            s.pop('pos_order', None)
+            s.pop('_po', None)
 
-    # ── 8. Timing e log ──
+    # ── 8. Log ──
     elapsed = time.time() - t0
-
     print(f"\n✅ Análise completa em {elapsed:.1f}s")
     print(f"   Board: {table['board']} ({table['street']})")
     print(f"   Pot: {table['pot']} | Blinds: {table['blinds']} | BTN: seat {table['btn_seat']}")
@@ -596,10 +587,15 @@ def base64_to_pil(b64):
 @app.route('/health', methods=['GET'])
 def health():
     coords = active_coords or load_coords()
+    gpu_name = 'N/A'
+    try:
+        gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'
+    except:
+        pass
     return jsonify({
         'status': 'ok',
         'ocr_engine': 'Chandra OCR 2',
-        'gpu': 'RTX 3090',
+        'gpu': gpu_name,
         'preset': coords.get('name', 'custom'),
         'seats': coords.get('seats', 8),
         'ocr_ready': _ocr_model is not None,
@@ -608,7 +604,6 @@ def health():
 
 @app.route('/warmup', methods=['POST'])
 def warmup():
-    """Pré-carregar modelo OCR (primeiro request demora ~30s)"""
     if not check_auth():
         return jsonify({'error': 'unauthorized'}), 401
     t0 = time.time()
@@ -618,10 +613,6 @@ def warmup():
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    """
-    Análise completa. Recebe: {image: base64}
-    Opcionalmente: {image: base64, btn_seat_idx: 3} para forçar posição do dealer
-    """
     if not check_auth():
         return jsonify({'error': 'unauthorized'}), 401
 
@@ -654,9 +645,8 @@ def analyze():
         pos_map = pos_maps.get(num_seats, pos_maps[8])
         analysis['table']['btn_seat'] = btn_idx + 1
         for s in analysis['seats']:
-            i = s['id'] - 1  # 0-indexed
+            i = s['id'] - 1
             s['position'] = pos_map[(num_seats - btn_idx + i) % num_seats]
-        # Re-sort by position
         for s in analysis['seats']:
             s['_po'] = pos_map.index(s['position']) if s['position'] in pos_map else 99
         analysis['seats'].sort(key=lambda s: s['_po'])
@@ -664,7 +654,6 @@ def analyze():
             s.pop('_po', None)
         print(f"  ⚠️  BTN manual override: seat {btn_idx + 1}")
 
-    # Hero cards para checar sucesso
     hero = next((s for s in analysis['seats'] if s['is_hero']), None)
     hero_cards = hero['cards'] if hero else []
     has_hero_cards = len([c for c in hero_cards if c]) == 2
@@ -680,7 +669,6 @@ def analyze():
 
 @app.route('/update-coords', methods=['POST'])
 def update_coords():
-    """Atualizar coordenadas (calibração). Recebe JSON com novo mapeamento."""
     if not check_auth():
         return jsonify({'error': 'unauthorized'}), 401
     data = request.get_json()
@@ -692,14 +680,12 @@ def update_coords():
 
 @app.route('/get-coords', methods=['GET'])
 def get_coords():
-    """Retorna coordenadas ativas (para o frontend de calibração)"""
     coords = active_coords or load_coords()
     return jsonify(coords)
 
 
 @app.route('/ocr-test', methods=['POST'])
 def ocr_test():
-    """Testar OCR numa região específica. Útil para calibrar."""
     if not check_auth():
         return jsonify({'error': 'unauthorized'}), 401
     data = request.get_json()
@@ -716,14 +702,12 @@ def ocr_test():
 
 @app.route('/presets', methods=['GET'])
 def list_presets():
-    """Listar presets disponíveis"""
     return jsonify({k: {'name': v['name'], 'seats': v['seats']}
                     for k, v in PRESETS.items()})
 
 
 @app.route('/presets/<name>', methods=['POST'])
 def load_preset(name):
-    """Carregar um preset específico"""
     if name not in PRESETS:
         return jsonify({'error': f'Preset "{name}" not found'}), 404
     save_coords(PRESETS[name])
@@ -736,10 +720,8 @@ if __name__ == '__main__':
     print("🃏 Poker Vision OCR Server")
     print("=" * 40)
 
-    # Carregar coordenadas
     load_coords()
 
-    # Pré-carregar OCR na startup
     print("\n🔄 Pré-carregando Chandra OCR 2...")
     get_ocr()
 
