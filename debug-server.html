@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🃏 Poker OCR — Debug &amp; Diagnóstico</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0d1117;
+    --surface:  #161b22;
+    --panel:    #1c2128;
+    --border:   #30363d;
+    --accent:   #238636;
+    --accent2:  #1f6feb;
+    --warn:     #d29922;
+    --danger:   #da3633;
+    --text:     #e6edf3;
+    --muted:    #8b949e;
+    --hero:     #f0e68c;
+    --card-r:   #ff6b6b;
+    --card-b:   #6bb5ff;
+    --card-g:   #6bffb5;
+    --card-k:   #c9c9c9;
+    --pos-btn:  #ffd700;
+    --pos-sb:   #ff8c00;
+    --pos-bb:   #ff4500;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', 'SF Pro', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  header h1 { font-size: 18px; font-weight: 700; }
+  header h1 span { color: var(--warn); }
+
+  .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-weight: 600;
+    letter-spacing: .4px;
+  }
+  .badge-ok    { background: #1a3a1a; color: #56d364; border: 1px solid #238636; }
+  .badge-warn  { background: #3a2a00; color: #e3b341; border: 1px solid #9e6a03; }
+  .badge-err   { background: #3a0000; color: #ff6b6b; border: 1px solid #da3633; }
+  .badge-info  { background: #0d2a3a; color: #6cb6ff; border: 1px solid #1f6feb; }
+
+  .ml-auto { margin-left: auto; }
+
+  /* ── LAYOUT ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 0;
+    height: calc(100vh - 53px);
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* ── MAIN ── */
+  .main {
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ── CARDS / PANELS ── */
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .card-header {
+    background: var(--surface);
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-body { padding: 14px; }
+
+  /* ── SERVER CONFIG ── */
+  .input-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  input[type=text], input[type=password] {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 7px 10px;
+    font-size: 13px;
+    outline: none;
+    transition: border .15s;
+  }
+  input[type=text]:focus, input[type=password]:focus { border-color: var(--accent2); }
+
+  button {
+    background: var(--accent2);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .15s, background .15s;
+    white-space: nowrap;
+  }
+  button:hover { opacity: .85; }
+  button:active { opacity: .7; }
+  button.green  { background: var(--accent); }
+  button.warn   { background: #9e6a03; }
+  button.danger { background: var(--danger); }
+  button.ghost  {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  button.ghost:hover { border-color: var(--text); color: var(--text); }
+  button:disabled { opacity: .4; cursor: default; }
+
+  /* ── UPLOAD DROP ZONE ── */
+  #drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 24px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+    color: var(--muted);
+    font-size: 13px;
+    position: relative;
+  }
+  #drop-zone:hover, #drop-zone.drag-over {
+    border-color: var(--accent2);
+    background: rgba(31,111,235,.07);
+    color: var(--text);
+  }
+  #drop-zone input { display: none; }
+  #drop-zone .drop-icon { font-size: 32px; display: block; margin-bottom: 8px; }
+
+  /* ── PREVIEW ── */
+  #img-preview {
+    width: 100%;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    display: none;
+    cursor: zoom-in;
+  }
+  #img-preview.show { display: block; }
+
+  /* ── HEALTH ── */
+  .health-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .health-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+  .health-item label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; display: block; margin-bottom: 3px; }
+  .health-item value { font-size: 13px; font-weight: 600; word-break: break-all; }
+
+  /* ── TIMING BAR ── */
+  .timings-list { display: flex; flex-direction: column; gap: 6px; }
+  .timing-row { display: grid; grid-template-columns: 90px 1fr 60px; align-items: center; gap: 8px; }
+  .timing-label { font-size: 12px; color: var(--muted); text-align: right; }
+  .timing-bar-wrap { background: var(--bg); border-radius: 99px; height: 10px; overflow: hidden; }
+  .timing-bar { height: 100%; border-radius: 99px; background: var(--accent2); transition: width .5s ease; }
+  .timing-bar.ocr { background: linear-gradient(90deg, #1f6feb, #a371f7); }
+  .timing-val { font-size: 12px; font-weight: 700; color: var(--text); text-align: right; }
+  .timing-total {
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .timing-total span { color: var(--accent2); }
+
+  /* ── TABLE OVERVIEW ── */
+  .table-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .table-stat {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    text-align: center;
+  }
+  .table-stat label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; display: block; margin-bottom: 4px; }
+  .table-stat value { font-size: 18px; font-weight: 800; display: block; }
+  .table-stat.ok value { color: #56d364; }
+  .table-stat.warn value { color: var(--warn); }
+  .table-stat.info value { color: #6cb6ff; }
+  .table-stat.hero value { color: var(--hero); }
+
+  /* ── BOARD ── */
+  .board-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .playing-card {
+    background: #fff;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 18px;
+    font-weight: 800;
+    min-width: 40px;
+    text-align: center;
+    border: 2px solid #ccc;
+    position: relative;
+    color: #111;
+  }
+  .playing-card.s { color: #1a1a2e; border-color: #555; }
+  .playing-card.h { color: #c0392b; border-color: #e74c3c; }
+  .playing-card.d { color: #2980b9; border-color: #3498db; }
+  .playing-card.c { color: #27ae60; border-color: #2ecc71; }
+  .playing-card.empty {
+    background: var(--bg);
+    border: 2px dashed var(--border);
+    color: var(--muted);
+    font-size: 13px;
+    padding: 4px 10px;
+  }
+  .playing-card .suit-icon { font-size: 12px; }
+
+  /* ── SEATS TABLE ── */
+  .seats-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .seats-table th {
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    padding: 7px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .seats-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #1c2128;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+  .seats-table tr:last-child td { border-bottom: none; }
+  .seats-table tr.hero-row { background: rgba(240,230,140,.05); }
+  .seats-table tr.inactive-row { opacity: .4; }
+  .seats-table tr:not(.inactive-row):hover { background: rgba(255,255,255,.03); }
+
+  .pos-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    display: inline-block;
+  }
+  .pos-BTN { background: rgba(255,215,0,.15); color: var(--pos-btn); border: 1px solid #a88200; }
+  .pos-SB  { background: rgba(255,140,0,.15); color: var(--pos-sb); border: 1px solid #a05400; }
+  .pos-BB  { background: rgba(255,69,0,.15);  color: var(--pos-bb); border: 1px solid #a03000; }
+  .pos-UTG, .pos-UTG1, .pos-LJ, .pos-MP, .pos-HJ, .pos-CO {
+    background: rgba(139,148,158,.1);
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+
+  .card-inline { font-size: 13px; font-weight: 700; margin: 0 1px; }
+  .card-inline.s { color: #8b9cf7; }
+  .card-inline.h { color: var(--card-r); }
+  .card-inline.d { color: var(--card-b); }
+  .card-inline.c { color: var(--card-g); }
+  .card-inline.empty { color: #444; }
+
+  .hero-star { color: var(--hero); font-size: 14px; }
+  .active-dot {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+  }
+  .dot-active   { background: #56d364; }
+  .dot-inactive { background: #444; }
+
+  /* ── RAW JSON ── */
+  .json-block {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
+    overflow-x: auto;
+    white-space: pre;
+    max-height: 400px;
+    overflow-y: auto;
+    line-height: 1.5;
+  }
+  .json-key    { color: #79c0ff; }
+  .json-string { color: #a5d6ff; }
+  .json-number { color: #f2cc60; }
+  .json-bool   { color: #ff9f9f; }
+  .json-null   { color: #888; }
+
+  /* ── PROBLEMS ── */
+  .problem-list { display: flex; flex-direction: column; gap: 6px; }
+  .problem-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .problem-item.error   { background: rgba(218,54,51,.1); border: 1px solid rgba(218,54,51,.3); color: #ff9f9f; }
+  .problem-item.warning { background: rgba(210,153,34,.1); border: 1px solid rgba(210,153,34,.3); color: #e3b341; }
+  .problem-item.ok      { background: rgba(35,134,54,.1);  border: 1px solid rgba(35,134,54,.3);  color: #56d364; }
+  .problem-item .icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+
+  /* ── TABS ── */
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .tab {
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color .15s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent2); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ── VISUAL TABLE ── */
+  .poker-table-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 10px 0;
+  }
+  .poker-table {
+    position: relative;
+    width: 500px;
+    height: 320px;
+    background: radial-gradient(ellipse at center, #1a4a1a 0%, #0f2a0f 70%, #0a1a0a 100%);
+    border-radius: 50%;
+    border: 6px solid #5a3a1a;
+    box-shadow: 0 0 40px rgba(0,0,0,.8), inset 0 0 30px rgba(0,0,0,.5);
+  }
+  .felt-line {
+    position: absolute;
+    top: 8px; left: 8px; right: 8px; bottom: 8px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.06);
+    pointer-events: none;
+  }
+  .table-center {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+  }
+  .table-pot {
+    font-size: 20px;
+    font-weight: 800;
+    color: #f0e68c;
+    text-shadow: 0 0 12px rgba(240,230,140,.5);
+  }
+  .table-street {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: rgba(255,255,255,.4);
+    margin-top: 2px;
+  }
+  .table-board {
+    display: flex;
+    gap: 3px;
+    justify-content: center;
+    margin-top: 6px;
+  }
+  .tboard-card {
+    background: #fff;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 5px;
+    color: #111;
+  }
+  .tboard-card.h { color: #c0392b; }
+  .tboard-card.d { color: #2980b9; }
+  .tboard-card.c { color: #27ae60; }
+
+  /* seat nodes around table */
+  .seat-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    background: var(--panel);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 8px;
+    text-align: center;
+    min-width: 72px;
+    font-size: 11px;
+    transition: border-color .2s;
+    cursor: default;
+  }
+  .seat-node.active  { border-color: #56d364; }
+  .seat-node.hero    { border-color: var(--hero); background: rgba(240,230,140,.06); }
+  .seat-node.inactive { opacity: .4; }
+  .seat-node .sn-name  { font-weight: 700; font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 72px; }
+  .seat-node .sn-stack { font-size: 10px; color: var(--muted); margin-top: 1px; }
+  .seat-node .sn-pos   { font-size: 10px; font-weight: 700; margin-bottom: 2px; }
+  .seat-node .sn-btn   { font-size: 9px; background: #ffd700; color: #111; border-radius: 50%; width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; margin-bottom: 2px; }
+
+  /* ── LOG ── */
+  #log-area {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    font-family: monospace;
+    font-size: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+    line-height: 1.6;
+  }
+  .log-ok   { color: #56d364; }
+  .log-err  { color: var(--card-r); }
+  .log-warn { color: var(--warn); }
+  .log-info { color: #6cb6ff; }
+  .log-dim  { color: var(--muted); }
+
+  /* ── SPINNER ── */
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent2);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; height: auto; }
+    .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
+    .poker-table { width: 320px; height: 210px; }
+  }
+
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+
+  .flex { display: flex; }
+  .gap-2 { gap: 8px; }
+  .items-center { align-items: center; }
+  .justify-between { justify-content: space-between; }
+  .mt-2 { margin-top: 8px; }
+  .mt-1 { margin-top: 4px; }
+  .text-muted { color: var(--muted); }
+  .text-sm { font-size: 12px; }
+  .font-bold { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<header>
+  <span style="font-size:22px">🃏</span>
+  <h1>Poker OCR <span>Debug</span></h1>
+  <span id="server-status-badge" class="badge badge-warn">Desconectado</span>
+  <span id="ocr-ready-badge" class="badge badge-warn" style="display:none">OCR Pronto</span>
+  <span id="gpu-badge" class="badge badge-info" style="display:none"></span>
+  <div class="ml-auto flex gap-2 items-center">
+    <span id="req-counter" class="text-muted text-sm" style="display:none">0 req</span>
+    <button class="ghost" onclick="clearAll()">🗑 Limpar</button>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ══════════════════════ SIDEBAR ══════════════════════ -->
+  <div class="sidebar">
+
+    <!-- Server Config -->
+    <div class="card">
+      <div class="card-header">⚙️ Servidor RunPod</div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
+        <div>
+          <div class="section-title">URL</div>
+          <div class="input-row">
+            <input type="text" id="server-url" placeholder="https://xxx-8080.proxy.runpod.net" value="">
+            <button onclick="checkHealth()">Testar</button>
+          </div>
+        </div>
+        <div>
+          <div class="section-title">API Key (opcional)</div>
+          <input type="password" id="api-key" placeholder="deixe vazio se não configurou" style="width:100%">
+        </div>
+        <button class="green" onclick="checkHealth()">🔌 Conectar &amp; Verificar</button>
+        <button id="warmup-btn" class="warn" style="display:none;width:100%" onclick="runWarmup()">🔥 Warmup OCR (carregar modelo)</button>
+      </div>
+    </div>
+
+    <!-- Health Info -->
+    <div class="card" id="health-card" style="display:none">
+      <div class="card-header">💚 Status do Servidor</div>
+      <div class="card-body">
+        <div class="health-grid" id="health-grid"></div>
+      </div>
+    </div>
+
+    <!-- Upload -->
+    <div class="card">
+      <div class="card-header">📸 Screenshot da Mesa</div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
+        <div id="drop-zone" onclick="document.getElementById('file-input').click()" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+          <input type="file" id="file-input" accept="image/*" onchange="onFileSelect(event)">
+          <span class="drop-icon">🖼</span>
+          Arraste um screenshot ou clique para selecionar<br>
+          <span class="text-sm text-muted">PNG, JPG, WEBP</span>
+        </div>
+        <button id="paste-btn" class="ghost" onclick="pasteFromClipboard()">📋 Colar da Área de Transferência</button>
+        <img id="img-preview" alt="Preview">
+        <div id="img-info" class="text-sm text-muted" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- Analyze Button -->
+    <button id="analyze-btn" class="green" style="width:100%;padding:12px;font-size:15px;display:none" onclick="runAnalyze()">
+      🔍 ANALISAR MESA
+    </button>
+
+    <!-- Log -->
+    <div class="card">
+      <div class="card-header">📋 Log
+        <button class="ghost" style="margin-left:auto;font-size:10px;padding:2px 8px" onclick="clearLog()">limpar</button>
+      </div>
+      <div class="card-body" style="padding:6px">
+        <div id="log-area"><span class="log-dim">Aguardando...</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════════ MAIN ══════════════════════ -->
+  <div class="main" id="main-content">
+
+    <!-- PLACEHOLDER -->
+    <div id="placeholder" style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:16px;color:var(--muted)">
+      <div style="font-size:64px">🃏</div>
+      <div style="font-size:18px;font-weight:700;color:var(--text)">Poker OCR Debug</div>
+      <div style="font-size:14px;text-align:center;max-width:380px">
+        Configure a URL do servidor, faça upload de um screenshot da mesa e clique em <strong>Analisar Mesa</strong> para ver todos os dados retornados pelo RunPod.
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+        <span class="badge badge-info">Timings por fase</span>
+        <span class="badge badge-ok">Dados de cada seat</span>
+        <span class="badge badge-warn">Diagnóstico de problemas</span>
+        <span class="badge badge-info">JSON completo</span>
+      </div>
+    </div>
+
+    <!-- RESULTS (hidden until first analysis) -->
+    <div id="results-wrap" style="display:none">
+
+      <!-- ── STATUS BAR ── -->
+      <div class="card" id="status-bar">
+        <div class="card-body" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span id="result-badge" class="badge"></span>
+          <span id="result-summary" style="font-size:14px;font-weight:600"></span>
+          <span class="ml-auto flex gap-2 items-center">
+            <span id="result-time" class="text-muted text-sm"></span>
+            <span id="req-time" style="font-size:13px;font-weight:700;color:#6cb6ff"></span>
+          </span>
+        </div>
+      </div>
+
+      <!-- ── TABS ── -->
+      <div class="card">
+        <div class="card-body" style="padding-bottom:0">
+          <div class="tabs">
+            <div class="tab active" onclick="switchTab('mesa')">🎯 Mesa</div>
+            <div class="tab" onclick="switchTab('seats')">👥 Seats</div>
+            <div class="tab" onclick="switchTab('timings')">⏱ Timings</div>
+            <div class="tab" onclick="switchTab('diagnostico')">🔬 Diagnóstico</div>
+            <div class="tab" onclick="switchTab('json')">📄 JSON Raw</div>
+          </div>
+        </div>
+
+        <div class="card-body">
+
+          <!-- TAB: MESA -->
+          <div id="tab-mesa" class="tab-content active">
+            <div class="section-title" style="margin-bottom:12px">Informações Gerais da Mesa</div>
+            <div class="table-grid" id="table-stats"></div>
+
+            <div class="section-title" style="margin-top:16px;margin-bottom:8px">Board (Cartas Comunitárias)</div>
+            <div class="board-row" id="board-display"></div>
+
+            <div class="section-title" style="margin-top:16px;margin-bottom:8px">Mesa Visual</div>
+            <div class="poker-table-wrap">
+              <div class="poker-table" id="poker-table-vis">
+                <div class="felt-line"></div>
+                <div class="table-center" id="table-center-info">
+                  <div class="table-pot" id="vis-pot">—</div>
+                  <div class="table-street" id="vis-street"></div>
+                  <div class="table-board" id="vis-board"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: SEATS -->
+          <div id="tab-seats" class="tab-content">
+            <div class="section-title" style="margin-bottom:8px">Dados por Seat (ordenados por posição poker)</div>
+            <div style="overflow-x:auto">
+              <table class="seats-table" id="seats-table">
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Posição Física</th>
+                    <th>Pos. Poker</th>
+                    <th>Nome (OCR)</th>
+                    <th>Stack</th>
+                    <th>Cartas</th>
+                    <th>Bet</th>
+                    <th>Bounty</th>
+                    <th>Ação</th>
+                  </tr>
+                </thead>
+                <tbody id="seats-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- TAB: TIMINGS -->
+          <div id="tab-timings" class="tab-content">
+            <div class="section-title" style="margin-bottom:12px">Tempo de Processamento por Fase</div>
+            <div class="timings-list" id="timings-list"></div>
+            <div style="margin-top:16px">
+              <div class="section-title" style="margin-bottom:8px">Histórico de Requisições</div>
+              <div id="req-history" style="display:flex;flex-direction:column;gap:4px"></div>
+            </div>
+          </div>
+
+          <!-- TAB: DIAGNÓSTICO -->
+          <div id="tab-diagnostico" class="tab-content">
+            <div class="section-title" style="margin-bottom:8px">Análise de Qualidade dos Dados</div>
+            <div class="problem-list" id="problem-list"></div>
+          </div>
+
+          <!-- TAB: JSON -->
+          <div id="tab-json" class="tab-content">
+            <div class="flex gap-2 items-center" style="margin-bottom:8px">
+              <span class="section-title" style="margin-bottom:0">JSON Completo da Resposta</span>
+              <button class="ghost" style="font-size:11px;padding:3px 10px;margin-left:auto" onclick="copyJson()">📋 Copiar</button>
+            </div>
+            <div class="json-block" id="json-display"></div>
+          </div>
+
+        </div>
+      </div>
+
+    </div><!-- /results-wrap -->
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<!-- LIGHTBOX -->
+<div id="lightbox" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:999;cursor:zoom-out;display:flex;align-items:center;justify-content:center" onclick="this.style.display='none'">
+  <img id="lightbox-img" style="max-width:95vw;max-height:95vh;border-radius:6px;box-shadow:0 0 60px rgba(0,0,0,.9)">
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════ */
+let lastResponse = null;
+let reqCount = 0;
+let reqHistory = [];
+let currentImg = null; // base64
+
+/* ═══════════════════════════════════════════════
+   LOG
+═══════════════════════════════════════════════ */
+function log(msg, type = 'info') {
+  const el = document.getElementById('log-area');
+  const ts = new Date().toLocaleTimeString('pt-BR', {hour12: false});
+  const cls = {info:'log-info', ok:'log-ok', err:'log-err', warn:'log-warn', dim:'log-dim'}[type] || 'log-info';
+  el.innerHTML += `<div class="${cls}">[${ts}] ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog() {
+  document.getElementById('log-area').innerHTML = '';
+}
+
+/* ═══════════════════════════════════════════════
+   SERVER UTILS
+═══════════════════════════════════════════════ */
+function getUrl(path) {
+  let base = document.getElementById('server-url').value.trim().replace(/\/+$/, '');
+  if (!base) return null;
+  return base + path;
+}
+function getHeaders() {
+  const key = document.getElementById('api-key').value.trim();
+  const h = { 'Content-Type': 'application/json' };
+  if (key) h['X-API-Key'] = key;
+  return h;
+}
+
+/* ═══════════════════════════════════════════════
+   HEALTH CHECK
+═══════════════════════════════════════════════ */
+async function checkHealth() {
+  const url = getUrl('/health');
+  if (!url) { log('URL do servidor não configurada', 'err'); return; }
+  log(`Verificando ${url}...`, 'dim');
+  setBadge('server-status-badge', 'warn', 'Conectando...');
+
+  try {
+    const r = await fetch(url, { headers: getHeaders() });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    renderHealth(d);
+    log(`Conectado! GPU: ${d.gpu} | OCR: ${d.ocr_ready ? '✅ Pronto' : '⏳ Aguardando — faça Warmup'}`, d.ocr_ready ? 'ok' : 'warn');
+
+    // Mostra botão warmup se OCR não estiver pronto
+    const warmupBtn = document.getElementById('warmup-btn');
+    if (!d.ocr_ready) {
+      warmupBtn.style.display = '';
+      log('⚠️ OCR não carregado — clique em "Warmup OCR" antes de analisar!', 'warn');
+    } else {
+      warmupBtn.style.display = 'none';
+    }
+  } catch(e) {
+    setBadge('server-status-badge', 'err', 'Offline');
+    log(`Erro ao conectar: ${e.message}`, 'err');
+  }
+}
+
+async function runWarmup() {
+  const url = getUrl('/warmup');
+  if (!url) return;
+  const btn = document.getElementById('warmup-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Carregando modelo (~30s)...';
+  log('🔥 Iniciando warmup do Chandra OCR 2 (~30s)...', 'warn');
+
+  try {
+    const r = await fetch(url, { method: 'POST', headers: getHeaders() });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    log(`✅ OCR pronto! (${d.elapsed})`, 'ok');
+    btn.style.display = 'none';
+    // Atualiza health
+    await checkHealth();
+  } catch(e) {
+    log(`❌ Warmup falhou: ${e.message}`, 'err');
+    btn.disabled = false;
+    btn.innerHTML = '🔥 Warmup OCR (tentar novamente)';
+  }
+}
+
+function renderHealth(d) {
+  setBadge('server-status-badge', 'ok', 'Online');
+
+  const ocrReady = d.ocr_ready;
+  const ocrBadge = document.getElementById('ocr-ready-badge');
+  ocrBadge.style.display = '';
+  setBadge('ocr-ready-badge', ocrReady ? 'ok' : 'warn', ocrReady ? '✅ OCR Pronto' : '⏳ OCR Carregando');
+
+  const gpuBadge = document.getElementById('gpu-badge');
+  gpuBadge.style.display = '';
+  gpuBadge.textContent = '🖥 ' + (d.gpu || 'N/A');
+
+  const grid = document.getElementById('health-grid');
+  const fields = [
+    ['Status', d.status === 'ok' ? '✅ ok' : '❌ ' + d.status],
+    ['OCR Engine', d.ocr_engine || 'N/A'],
+    ['GPU', d.gpu || 'N/A'],
+    ['Preset', d.preset || 'N/A'],
+    ['Seats Config.', d.seats || '?'],
+    ['OCR Pronto', d.ocr_ready ? '✅ Sim' : '⏳ Carregando...'],
+  ];
+  grid.innerHTML = fields.map(([l, v]) =>
+    `<div class="health-item"><label>${l}</label><value>${v}</value></div>`
+  ).join('');
+  document.getElementById('health-card').style.display = '';
+
+  if (d.seat_ids && d.seat_ids.length > 0) {
+    grid.innerHTML += `<div class="health-item" style="grid-column:span 2"><label>Seat IDs Configurados</label><value style="font-size:11px;word-break:break-all">${d.seat_ids.join(' · ')}</value></div>`;
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   IMAGE UPLOAD
+═══════════════════════════════════════════════ */
+function onDragOver(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.add('drag-over');
+}
+function onDragLeave(e) {
+  document.getElementById('drop-zone').classList.remove('drag-over');
+}
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) loadImageFile(file);
+}
+function onFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) loadImageFile(file);
+}
+async function pasteFromClipboard() {
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const imgType = item.types.find(t => t.startsWith('image/'));
+      if (imgType) {
+        const blob = await item.getType(imgType);
+        loadImageFile(blob);
+        return;
+      }
+    }
+    log('Nenhuma imagem encontrada na área de transferência', 'warn');
+  } catch(e) {
+    log('Erro ao colar: ' + e.message + ' (use Ctrl+V ou tente outro método)', 'err');
+  }
+}
+function loadImageFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    currentImg = e.target.result;
+    const preview = document.getElementById('img-preview');
+    preview.src = currentImg;
+    preview.classList.add('show');
+    preview.onclick = () => {
+      document.getElementById('lightbox-img').src = currentImg;
+      document.getElementById('lightbox').style.display = 'flex';
+    };
+
+    // Show img info
+    const img = new Image();
+    img.onload = () => {
+      document.getElementById('img-info').style.display = '';
+      document.getElementById('img-info').textContent = `${img.width}×${img.height}px · ${(file.size/1024).toFixed(0)}KB`;
+      log(`Imagem carregada: ${img.width}×${img.height}px (${(file.size/1024).toFixed(0)}KB)`, 'ok');
+    };
+    img.src = currentImg;
+
+    document.getElementById('analyze-btn').style.display = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ═══════════════════════════════════════════════
+   ANALYZE
+═══════════════════════════════════════════════ */
+async function runAnalyze() {
+  const url = getUrl('/analyze');
+  if (!url) { log('URL não configurada', 'err'); return; }
+  if (!currentImg) { log('Nenhuma imagem carregada', 'err'); return; }
+
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Analisando...';
+  log('Enviando screenshot para análise...', 'info');
+
+  const t0 = performance.now();
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ image: currentImg }),
+    });
+    const elapsed = performance.now() - t0;
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${errText}`);
+    }
+
+    const data = await resp.json();
+    lastResponse = data;
+    reqCount++;
+    reqHistory.push({ n: reqCount, elapsed: elapsed, data });
+
+    log(`✅ Análise concluída em ${(elapsed/1000).toFixed(2)}s (${data.elapsed}s server-side)`, 'ok');
+    renderResults(data, elapsed);
+    updateReqCounter();
+  } catch(e) {
+    log(`❌ Erro: ${e.message}`, 'err');
+    setResultBadge('err', 'Erro na Análise', e.message);
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '🔍 ANALISAR MESA';
+}
+
+/* ═══════════════════════════════════════════════
+   RENDER RESULTS
+═══════════════════════════════════════════════ */
+function renderResults(data, clientElapsed) {
+  document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('results-wrap').style.display = '';
+
+  const hasHeroCards = data.success;
+  const activeSeatCount = data.seats ? data.seats.filter(s => s.active).length : 0;
+
+  // Status bar
+  if (hasHeroCards) {
+    setResultBadge('ok', '✅ Análise Bem-sucedida', `${activeSeatCount} seats ativos detectados`);
+  } else {
+    setResultBadge('warn', '⚠️ Parcial', `Hero sem cartas — ${activeSeatCount} seats ativos`);
+  }
+  document.getElementById('req-time').textContent = `${(clientElapsed/1000).toFixed(2)}s cliente / ${data.elapsed}s servidor`;
+
+  // Tabs
+  renderMesaTab(data);
+  renderSeatsTab(data);
+  renderTimingsTab(data, clientElapsed);
+  renderDiagnosticoTab(data);
+  renderJsonTab(data);
+  renderTimingsHistory();
+}
+
+/* ─── TAB: MESA ─── */
+function renderMesaTab(data) {
+  const t = data.table || {};
+  const seats = data.seats || [];
+  const heroSeat = seats.find(s => s.is_hero);
+  const activeCnt = seats.filter(s => s.active).length;
+  const btnSeat = seats.find(s => s.position === 'BTN');
+
+  // Stats grid
+  const stats = [
+    { label: 'Pot', value: t.pot > 0 ? numFmt(t.pot) : '—', cls: t.pot > 0 ? 'ok' : 'warn' },
+    { label: 'Street', value: (t.street || 'preflop').toUpperCase(), cls: 'info' },
+    { label: 'Blinds', value: t.blinds || '—', cls: t.blinds ? 'ok' : 'warn' },
+    { label: 'BTN Seat', value: t.btn_seat > 0 ? '#' + t.btn_seat : '?', cls: t.btn_seat > 0 ? 'ok' : 'warn' },
+    { label: 'Ativos', value: `${activeCnt}/${seats.length}`, cls: 'info' },
+    { label: 'Hero Cards', value: heroSeat && heroSeat.cards && heroSeat.cards.filter(c=>c).length===2
+        ? heroSeat.cards.join(' ')
+        : '?', cls: heroSeat && heroSeat.cards && heroSeat.cards.filter(c=>c).length===2 ? 'hero' : 'warn' },
+  ];
+
+  document.getElementById('table-stats').innerHTML = stats.map(s =>
+    `<div class="table-stat ${s.cls}"><label>${s.label}</label><value>${s.value}</value></div>`
+  ).join('');
+
+  // Board
+  const board = t.board || [];
+  const boardEl = document.getElementById('board-display');
+  boardEl.innerHTML = '';
+  for (let i = 0; i < 5; i++) {
+    if (board[i]) {
+      boardEl.appendChild(makeCard(board[i], 'playing-card'));
+    } else {
+      const c = document.createElement('div');
+      c.className = 'playing-card empty';
+      c.textContent = i < 3 ? 'Flop' : (i === 3 ? 'Turn' : 'River');
+      if (i >= board.length + (board.length === 0 ? 0 : 0)) {
+        // only show empties up to logical limit
+      }
+      boardEl.appendChild(c);
+    }
+  }
+
+  // Visual table
+  renderVisualTable(data);
+}
+
+function makeCard(cardStr, cls) {
+  const el = document.createElement('div');
+  if (!cardStr) { el.className = cls + ' empty'; el.textContent = '?'; return el; }
+  const rank = cardStr[0];
+  const suit = cardStr[1] || '';
+  const suitSymbols = { s: '♠', h: '♥', d: '♦', c: '♣' };
+  el.className = `${cls} ${suit}`;
+  el.innerHTML = rank + (suitSymbols[suit] ? `<span class="suit-icon">${suitSymbols[suit]}</span>` : '');
+  return el;
+}
+
+function renderVisualTable(data) {
+  const t = data.table || {};
+  const seats = data.seats || [];
+
+  // Center info
+  document.getElementById('vis-pot').textContent = t.pot > 0 ? numFmt(t.pot) : 'Pot: —';
+  document.getElementById('vis-street').textContent = (t.street || 'preflop').toUpperCase();
+
+  const visBoard = document.getElementById('vis-board');
+  visBoard.innerHTML = '';
+  (t.board || []).forEach(c => {
+    if (!c) return;
+    const el = document.createElement('div');
+    const suit = c[1] || '';
+    el.className = 'tboard-card ' + suit;
+    el.textContent = c[0] + ({'s':'♠','h':'♥','d':'♦','c':'♣'}[suit] || '');
+    visBoard.appendChild(el);
+  });
+
+  // Clear old nodes
+  const tableEl = document.getElementById('poker-table-vis');
+  tableEl.querySelectorAll('.seat-node').forEach(n => n.remove());
+
+  // Seat positions around the ellipse (8 seats)
+  // Angles in degrees starting from bottom center, going clockwise
+  const seatAngles = {
+    'hero':         270, // bottom center
+    'bottom_left':  225,
+    'left':         180,
+    'top_left':     135,
+    'top':           90,
+    'top_right':     45,
+    'right':          0,
+    'bottom_right': 315,
+  };
+
+  // fallback: distribute equally
+  const tableW = 500, tableH = 320;
+  const rx = 270, ry = 155; // radii of the ellipse (slightly bigger than felt)
+
+  seats.forEach((seat, idx) => {
+    const angle = seatAngles[seat.id] !== undefined
+      ? seatAngles[seat.id]
+      : 270 - idx * (360 / seats.length);
+
+    const rad = (angle * Math.PI) / 180;
+    const cx = tableW / 2 + rx * Math.cos(rad);
+    const cy = tableH / 2 - ry * Math.sin(rad);
+
+    const node = document.createElement('div');
+    let nodeClass = 'seat-node';
+    if (seat.is_hero) nodeClass += ' hero';
+    else if (seat.active) nodeClass += ' active';
+    else nodeClass += ' inactive';
+    node.className = nodeClass;
+    node.style.left = cx + 'px';
+    node.style.top = cy + 'px';
+
+    let html = '';
+    if (seat.position === 'BTN') html += `<div class="sn-btn">D</div>`;
+
+    const posColor = {
+      BTN: '#ffd700', SB: '#ff8c00', BB: '#ff4500'
+    }[seat.position] || 'var(--muted)';
+    html += `<div class="sn-pos" style="color:${posColor}">${seat.position || '?'}</div>`;
+
+    const displayName = seat.name || (seat.is_hero ? 'Hero' : seat.label);
+    html += `<div class="sn-name">${displayName}</div>`;
+
+    if (seat.active) {
+      html += `<div class="sn-stack">${seat.stack > 0 ? numFmt(seat.stack) : '—'}</div>`;
+      if (seat.cards && (seat.cards[0] || seat.cards[1])) {
+        const c1 = seat.cards[0] || '?';
+        const c2 = seat.cards[1] || '?';
+        html += `<div style="font-size:10px;font-weight:800;margin-top:2px">${c1} ${c2}</div>`;
+      }
+    }
+
+    node.innerHTML = html;
+    tableEl.appendChild(node);
+  });
+}
+
+/* ─── TAB: SEATS ─── */
+function renderSeatsTab(data) {
+  const seats = data.seats || [];
+  const tbody = document.getElementById('seats-tbody');
+  tbody.innerHTML = '';
+
+  seats.forEach(s => {
+    const tr = document.createElement('tr');
+    tr.className = s.is_hero ? 'hero-row' : (s.active ? '' : 'inactive-row');
+
+    // Active dot
+    const dotCls = s.active ? 'dot-active' : 'dot-inactive';
+    const heroMark = s.is_hero ? ' <span class="hero-star">★</span>' : '';
+
+    // Position badge
+    const posBadge = s.position && s.position !== '?'
+      ? `<span class="pos-badge pos-${s.position.replace('+','1')}">${s.position}</span>`
+      : `<span class="text-muted">—</span>`;
+
+    // Cards
+    const suitSymbols = { s: '♠', h: '♥', d: '♦', c: '♣' };
+    function cardHtml(c) {
+      if (!c) return `<span class="card-inline empty">—</span>`;
+      const rank = c[0], suit = c[1] || '';
+      return `<span class="card-inline ${suit}">${rank}${suitSymbols[suit] || ''}</span>`;
+    }
+    const cardsHtml = (s.cards && s.cards.length)
+      ? cardHtml(s.cards[0]) + ' ' + cardHtml(s.cards[1])
+      : `<span class="text-muted">—</span>`;
+
+    // Stack color
+    const stackColor = !s.active ? 'var(--muted)' : (s.stack > 0 ? '#56d364' : '#ff9f9f');
+
+    tr.innerHTML = `
+      <td><span class="active-dot ${dotCls}"></span>${heroMark}</td>
+      <td>
+        <div style="font-weight:700;font-size:12px">${s.label || s.id || ''}</div>
+        <div style="font-size:11px;color:var(--muted)">seat #${s.seat} · ${s.id || ''}</div>
+      </td>
+      <td>${posBadge}</td>
+      <td style="font-weight:600">${s.name || '<span class="text-muted">—</span>'}</td>
+      <td style="color:${stackColor};font-weight:700;font-variant-numeric:tabular-nums">
+        ${s.stack > 0 ? numFmt(s.stack) : (s.active ? '<span style="color:#ff9f9f">?</span>' : '—')}
+      </td>
+      <td>${cardsHtml}</td>
+      <td style="color:var(--warn)">${s.bet > 0 ? numFmt(s.bet) : '—'}</td>
+      <td style="color:#a371f7">${s.bounty || '—'}</td>
+      <td style="color:#6cb6ff">${s.action || '—'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+/* ─── TAB: TIMINGS ─── */
+function renderTimingsTab(data, clientElapsed) {
+  const t = data.timings || {};
+  const serverElapsed = parseFloat(data.elapsed || '0') * 1000;
+
+  const phases = [
+    { key: 'dealer',    label: 'Dealer Detection', desc: 'Detecção visual do botão dealer' },
+    { key: 'detect',    label: 'Seat Detection',   desc: 'Detecção de seats ativos (pixel)' },
+    { key: 'crop',      label: 'Image Crop',       desc: 'Recorte de todas as regiões' },
+    { key: 'ocr_batch', label: 'OCR Batch',        desc: 'Inferência Chandra OCR 2 (GPU)', isOcr: true },
+    { key: 'parse',     label: 'Parse Results',    desc: 'Parsing de texto para dados estruturados' },
+  ];
+
+  // Parse ms values
+  const values = {};
+  let totalKnown = 0;
+  phases.forEach(p => {
+    const raw = t[p.key] || '0ms';
+    values[p.key] = parseInt(raw) || 0;
+    totalKnown += values[p.key];
+  });
+
+  const maxMs = Math.max(...Object.values(values), 1);
+
+  const container = document.getElementById('timings-list');
+  container.innerHTML = '';
+
+  phases.forEach(p => {
+    const ms = values[p.key];
+    const pct = Math.round((ms / maxMs) * 100);
+    const div = document.createElement('div');
+    div.innerHTML = `
+      <div class="flex justify-between items-center" style="margin-bottom:4px">
+        <div>
+          <span style="font-weight:700;font-size:13px">${p.label}</span>
+          <span class="text-muted text-sm" style="margin-left:6px">${p.desc}</span>
+        </div>
+        <span style="font-size:12px;font-weight:700;color:${p.isOcr ? '#a371f7' : '#6cb6ff'}">${t[p.key] || '—'}</span>
+      </div>
+      <div class="timing-bar-wrap" style="margin-bottom:10px">
+        <div class="timing-bar ${p.isOcr ? 'ocr' : ''}" style="width:${pct}%"></div>
+      </div>
+    `;
+    container.appendChild(div);
+  });
+
+  // Totals
+  const overhead = clientElapsed - serverElapsed;
+  container.innerHTML += `
+    <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+      <div class="flex justify-between" style="margin-bottom:4px">
+        <span class="text-muted">Total Servidor</span>
+        <span style="font-weight:700;color:#56d364">${data.elapsed}s</span>
+      </div>
+      <div class="flex justify-between" style="margin-bottom:4px">
+        <span class="text-muted">Total Cliente (com rede)</span>
+        <span style="font-weight:700;color:#6cb6ff">${(clientElapsed/1000).toFixed(2)}s</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-muted">Overhead de Rede</span>
+        <span style="font-weight:700;color:${overhead < 500 ? '#56d364' : '#e3b341'}">${overhead.toFixed(0)}ms</span>
+      </div>
+      <div class="flex justify-between" style="margin-top:6px;font-size:11px">
+        <span class="text-muted">OCR como % do total</span>
+        <span style="color:#a371f7">${serverElapsed > 0 ? Math.round(values.ocr_batch / serverElapsed * 100 * 10) / 10 : '—'}%</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderTimingsHistory() {
+  const el = document.getElementById('req-history');
+  if (!el) return;
+  if (reqHistory.length === 0) { el.innerHTML = '<span class="text-muted text-sm">Nenhuma requisição ainda</span>'; return; }
+
+  const last10 = reqHistory.slice(-10).reverse();
+  el.innerHTML = last10.map(r => {
+    const ok = r.data.success;
+    const active = r.data.seats ? r.data.seats.filter(s => s.active).length : 0;
+    const color = ok ? '#56d364' : '#e3b341';
+    return `
+      <div class="flex justify-between items-center" style="padding:5px 8px;background:var(--bg);border:1px solid var(--border);border-radius:5px">
+        <span class="text-muted text-sm">#${r.n}</span>
+        <span style="font-size:11px">${ok ? '✅' : '⚠️'} ${active} ativos · ${r.data.table?.street || '—'}</span>
+        <span style="font-weight:700;color:${color};font-size:12px">${(r.elapsed/1000).toFixed(2)}s</span>
+      </div>
+    `;
+  }).join('');
+}
+
+/* ─── TAB: DIAGNÓSTICO ─── */
+function renderDiagnosticoTab(data) {
+  const t = data.table || {};
+  const seats = data.seats || [];
+  const hero = seats.find(s => s.is_hero);
+  const active = seats.filter(s => s.active);
+  const problems = [];
+
+  // Hero
+  if (!hero) {
+    problems.push({ type: 'error', icon: '❌', msg: 'Seat do Hero não encontrado na resposta' });
+  } else if (!hero.active) {
+    problems.push({ type: 'warning', icon: '⚠️', msg: 'Hero detectado como INATIVO (sem cartas visíveis)' });
+  } else {
+    const heroCards = hero.cards ? hero.cards.filter(c => c) : [];
+    if (heroCards.length < 2) {
+      problems.push({ type: 'warning', icon: '⚠️', msg: `Hero ativo mas apenas ${heroCards.length}/2 cartas detectadas — OCR pode estar falhando nas cartas do hero` });
+    } else {
+      problems.push({ type: 'ok', icon: '✅', msg: `Hero detectado com 2 cartas: ${hero.cards.join(' ')}` });
+    }
+    if (!hero.stack || hero.stack === 0) {
+      problems.push({ type: 'warning', icon: '⚠️', msg: 'Stack do Hero é 0 ou não detectado — verificar região de stack' });
+    }
+  }
+
+  // BTN
+  if (!t.btn_seat || t.btn_seat < 0) {
+    problems.push({ type: 'warning', icon: '⚠️', msg: 'Dealer button não detectado — detecção por cor falhou (pode precisar de calibração)' });
+  } else {
+    problems.push({ type: 'ok', icon: '✅', msg: `Dealer button detectado: Seat #${t.btn_seat}` });
+  }
+
+  // Pot
+  if (!t.pot || t.pot === 0) {
+    problems.push({ type: 'warning', icon: '⚠️', msg: 'Pot = 0 — OCR da região de pot pode estar falhando' });
+  } else {
+    problems.push({ type: 'ok', icon: '✅', msg: `Pot detectado: ${numFmt(t.pot)}` });
+  }
+
+  // Blinds
+  if (!t.blinds) {
+    problems.push({ type: 'warning', icon: '⚠️', msg: 'Blinds não detectados — região pode estar zerada no preset' });
+  }
+
+  // Seats with issues
+  const missingStacks = active.filter(s => !s.stack || s.stack === 0);
+  if (missingStacks.length > 0) {
+    problems.push({ type: 'warning', icon: '⚠️', msg: `${missingStacks.length} seat(s) ativo(s) com stack = 0: ${missingStacks.map(s => s.label).join(', ')}` });
+  } else if (active.length > 0) {
+    problems.push({ type: 'ok', icon: '✅', msg: `Todos os ${active.length} seats ativos têm stack detectado` });
+  }
+
+  const missingNames = active.filter(s => !s.name || s.name.startsWith('Player'));
+  if (missingNames.length > 0) {
+    problems.push({ type: 'warning', icon: '⚠️', msg: `${missingNames.length} seat(s) com nome não detectado (usando fallback): ${missingNames.map(s => s.label).join(', ')}` });
+  }
+
+  // Board vs street
+  const boardLen = (t.board || []).length;
+  const expectedBoard = { preflop: 0, flop: 3, turn: 4, river: 5 }[t.street] ?? 0;
+  if (boardLen !== expectedBoard) {
+    problems.push({ type: 'warning', icon: '⚠️', msg: `Board tem ${boardLen} cartas mas street é "${t.street}" (esperado ${expectedBoard}) — OCR do board pode ter erro` });
+  } else if (boardLen > 0) {
+    problems.push({ type: 'ok', icon: '✅', msg: `Board consistente: ${boardLen} cartas (${t.street})` });
+  }
+
+  // Active count
+  if (active.length < 2) {
+    problems.push({ type: 'error', icon: '❌', msg: `Apenas ${active.length} seat(s) ativo(s) detectado(s) — detecção de cartas pode estar muito restritiva` });
+  } else {
+    problems.push({ type: 'ok', icon: '✅', msg: `${active.length} seats ativos detectados` });
+  }
+
+  // Bet regions (all zero = regions probably not calibrated)
+  const hasBets = active.some(s => s.bet > 0);
+  if (!hasBets && t.street !== 'preflop') {
+    problems.push({ type: 'warning', icon: '⚠️', msg: 'Nenhum bet detectado em street pós-flop — regiões de bet podem não estar calibradas' });
+  }
+
+  // Positions
+  const unknownPos = active.filter(s => s.position === '?');
+  if (unknownPos.length > 0) {
+    problems.push({ type: 'warning', icon: '⚠️', msg: `${unknownPos.length} seat(s) com posição poker "?" — dealer button não detectado corretamente` });
+  }
+
+  // Render
+  const el = document.getElementById('problem-list');
+  el.innerHTML = problems.map(p =>
+    `<div class="problem-item ${p.type}">
+       <span class="icon">${p.icon}</span>
+       <span>${p.msg}</span>
+     </div>`
+  ).join('');
+}
+
+/* ─── TAB: JSON ─── */
+function renderJsonTab(data) {
+  document.getElementById('json-display').innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
+}
+
+function copyJson() {
+  if (!lastResponse) return;
+  navigator.clipboard.writeText(JSON.stringify(lastResponse, null, 2))
+    .then(() => log('JSON copiado para área de transferência', 'ok'))
+    .catch(() => log('Erro ao copiar JSON', 'err'));
+}
+
+/* ═══════════════════════════════════════════════
+   UTILS
+═══════════════════════════════════════════════ */
+function syntaxHighlight(json) {
+  return json
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function(m) {
+      let cls = 'json-number';
+      if (/^"/.test(m)) { cls = /:$/.test(m) ? 'json-key' : 'json-string'; }
+      else if (/true|false/.test(m)) { cls = 'json-bool'; }
+      else if (/null/.test(m)) { cls = 'json-null'; }
+      return `<span class="${cls}">${m}</span>`;
+    });
+}
+
+function numFmt(n) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  if (n >= 1000) return n.toLocaleString('pt-BR');
+  if (Number.isInteger(n)) return n.toString();
+  return n.toFixed(2);
+}
+
+function setBadge(id, type, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = `badge badge-${type}`;
+  el.textContent = text;
+}
+
+function setResultBadge(type, text, sub) {
+  setBadge('result-badge', type, type === 'ok' ? '✅ OK' : type === 'warn' ? '⚠️ Aviso' : '❌ Erro');
+  document.getElementById('result-summary').textContent = sub || text;
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    const tabNames = ['mesa','seats','timings','diagnostico','json'];
+    t.classList.toggle('active', tabNames[i] === name);
+  });
+  document.querySelectorAll('.tab-content').forEach(c => {
+    c.classList.toggle('active', c.id === 'tab-' + name);
+  });
+}
+
+function updateReqCounter() {
+  const el = document.getElementById('req-counter');
+  el.style.display = '';
+  el.textContent = `${reqCount} req`;
+}
+
+function clearAll() {
+  currentImg = null;
+  lastResponse = null;
+  reqCount = 0;
+  reqHistory = [];
+  document.getElementById('img-preview').classList.remove('show');
+  document.getElementById('img-info').style.display = 'none';
+  document.getElementById('analyze-btn').style.display = 'none';
+  document.getElementById('results-wrap').style.display = 'none';
+  document.getElementById('placeholder').style.display = '';
+  document.getElementById('req-counter').style.display = 'none';
+  clearLog();
+  log('Tudo limpo', 'dim');
+}
+
+/* ═══════════════════════════════════════════════
+   KEYBOARD SHORTCUTS
+═══════════════════════════════════════════════ */
+document.addEventListener('keydown', e => {
+  // Ctrl+Enter → analyze
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    if (currentImg) runAnalyze();
+  }
+  // Ctrl+V para colar imagem
+  if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !e.target.matches('input, textarea')) {
+    pasteFromClipboard();
+  }
+  // Esc → fecha lightbox
+  if (e.key === 'Escape') {
+    document.getElementById('lightbox').style.display = 'none';
+  }
+});
+
+/* ═══════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════ */
+log('Debug tool carregado. Configure a URL do servidor e teste a conexão.', 'dim');
+log('Atalhos: Ctrl+Enter = Analisar | Ctrl+V = Colar imagem | Esc = Fechar zoom', 'dim');
+</script>
+</body>
+</html>

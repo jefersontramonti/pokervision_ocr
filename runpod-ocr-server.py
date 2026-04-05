@@ -310,26 +310,24 @@ def detect_seat_active(img_pil, region, is_hero=False):
 
     r, g, b = arr[:,:,0].astype(float), arr[:,:,1].astype(float), arr[:,:,2].astype(float)
 
+    gray = np.mean(arr, axis=2)
+    variance = float(np.var(gray))
+
+    # Cartas face-up (hero ou showdown): região clara com conteúdo variado
+    bright_mask = (r > 160) & (g > 160) & (b > 160)
+    bright_pct  = float(np.sum(bright_mask) / total_pixels * 100)
+    face_up     = bright_pct > 15 and variance > 500
+
     if is_hero:
-        # Hero: cartas face-up são claras (branco/cinza claro com texto)
-        bright_mask = (r > 160) & (g > 160) & (b > 160)
-        bright_pct = np.sum(bright_mask) / total_pixels * 100
-        # Variância indica que tem conteúdo (texto, naipes) e não é fundo uniforme
-        gray = np.mean(arr, axis=2)
-        variance = float(np.var(gray))
-        return bool(bright_pct > 15 and variance > 500)
+        return bool(face_up)
     else:
-        # Vilões: verso vermelho das cartas do GGPoker
-        # Vermelho: R alto, G baixo, B baixo (verso escuro-avermelhado)
-        red_mask = (r > 120) & (g < 80) & (b < 80) & (r > g * 1.8) & (r > b * 1.8)
-        red_pct = np.sum(red_mask) / total_pixels * 100
-
-        # Também detectar vermelho mais escuro/marrom (variações do verso)
-        dark_red_mask = (r > 80) & (r < 180) & (g < 60) & (b < 60) & (r > g * 2)
-        dark_red_pct = np.sum(dark_red_mask) / total_pixels * 100
-
-        # Se mais de 10% da região é vermelha → tem cartas
-        return bool(red_pct > 10 or dark_red_pct > 15)
+        # Vilões: verso VERMELHO (normal) OU cartas face-up (showdown/all-in)
+        red_mask      = (r > 120) & (g < 80) & (b < 80) & (r > g * 1.8) & (r > b * 1.8)
+        dark_red_mask = (r > 80)  & (r < 180) & (g < 60) & (b < 60) & (r > g * 2)
+        red_pct       = float(np.sum(red_mask)      / total_pixels * 100)
+        dark_red_pct  = float(np.sum(dark_red_mask) / total_pixels * 100)
+        face_down     = red_pct > 10 or dark_red_pct > 15
+        return bool(face_down or face_up)
 
 
 def detect_dealer_position(img_pil, dealer_regions):
@@ -537,20 +535,24 @@ def save_coords(coords):
 def build_labeled_mosaic(regions):
     """
     Constrói mosaico vertical com cada crop precedido por label.
-    Cada item tem altura proporcional ao crop (cartas recebem mais espaço).
-    Chandra retorna HTML: <tr><td>[LABEL]</td><td>VALOR</td></tr>
+    Labels: PRETO fundo + BRANCO texto + fonte grande → alto contraste, OCR confiável.
     """
-    from PIL import ImageDraw
+    from PIL import ImageDraw, ImageFont
 
-    LABEL_H  = 22    # altura da faixa de label
-    MOSAIC_W = 280   # largura total (mais largo = mais detalhe nas cartas)
-    GAP      = 6     # espaço entre itens
+    MOSAIC_W = 320   # largura total
+    LABEL_H  = 32    # altura da faixa de label (maior = fonte maior)
+    GAP      = 8     # espaço entre itens
 
-    # Altura de cada crop: cartas recebem mais espaço para preservar naipes
+    # Fonte maior para labels legíveis pelo OCR
+    try:
+        font = ImageFont.load_default(size=20)
+    except Exception:
+        font = ImageFont.load_default()
+
     def crop_h(label):
         if label.startswith('HC') or label.startswith('BD'):
-            return 110   # cartas precisam de altura para o símbolo do naipe
-        return 55        # números (pot, stack, nome) precisam menos
+            return 120  # cartas: mais altura preserva naipes
+        return 60       # números / nomes
 
     total_h = sum(LABEL_H + crop_h(lbl) + GAP for lbl, _ in regions)
     mosaic  = Image.new('RGB', (MOSAIC_W, total_h), (255, 255, 255))
@@ -560,18 +562,17 @@ def build_labeled_mosaic(regions):
     for label, crop in regions:
         ch = crop_h(label)
 
-        # Faixa cinza com label
-        draw.rectangle([(0, y), (MOSAIC_W, y + LABEL_H - 1)], fill=(200, 200, 200))
-        draw.text((4, y + 4), f'[{label}]', fill=(0, 0, 0))
+        # Faixa PRETA com texto BRANCO — máximo contraste, OCR confiável
+        draw.rectangle([(0, y), (MOSAIC_W, y + LABEL_H - 1)], fill=(0, 0, 0))
+        draw.text((8, y + 6), f'[{label}]', fill=(255, 255, 255), font=font)
 
-        # Crop: manter proporção ao redimensionar (não esmagar)
+        # Crop: escala proporcional, centralizado
         cw_orig, ch_orig = crop.size
         scale  = min(MOSAIC_W / max(cw_orig, 1), ch / max(ch_orig, 1))
         nw, nh = max(1, int(cw_orig * scale)), max(1, int(ch_orig * scale))
         resized = crop.resize((nw, nh), Image.LANCZOS)
-        # Centralizar no espaço disponível
-        x_off = (MOSAIC_W - nw) // 2
-        y_off = y + LABEL_H + (ch - nh) // 2
+        x_off   = (MOSAIC_W - nw) // 2
+        y_off   = y + LABEL_H + (ch - nh) // 2
         mosaic.paste(resized, (x_off, y_off))
 
         y += LABEL_H + ch + GAP
