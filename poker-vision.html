@@ -1,0 +1,3225 @@
+<html lang="pt-BR"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DataViz Tool</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0f0f1a;--panel:#1a1a2e;--border:#2a2a4a;--green:#4ade80;--red:#ef4444;--gold:#fbbf24;--blue:#3b82f6;--txt:#e2e8f0;--muted:#64748b;--dim:#94a3b8}
+body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+.app{max-width:1200px;margin:0 auto;padding:16px}
+.header{text-align:center;padding:12px 0;margin-bottom:16px;border-bottom:1px solid var(--border)}
+.header h1{font-size:1.5rem;color:var(--green);margin-bottom:4px}
+.header p{color:var(--muted);font-size:.85rem}
+
+/* API Key */
+.api-section{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:16px}
+.api-section label{font-size:.85rem;color:var(--dim);display:block;margin-bottom:6px}
+.api-row{display:flex;gap:8px;align-items:center}
+.api-row input{flex:1;background:#111;border:1px solid var(--border);color:var(--txt);padding:8px 12px;border-radius:6px;font-size:.85rem;font-family:monospace}
+.api-row input:focus{border-color:var(--green);outline:none}
+.btn{padding:8px 16px;border-radius:6px;border:none;font-weight:600;cursor:pointer;font-size:.85rem;transition:all .2s}
+.btn-green{background:var(--green);color:#000}.btn-green:hover{background:#22c55e}
+.btn-red{background:var(--red);color:#fff}
+.btn-sec{background:#334155;color:var(--txt)}.btn-sec:hover{background:#475569}
+.status-dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.status-dot.ok{background:var(--green)}.status-dot.no{background:var(--red)}
+
+/* Drop Zone */
+.drop-zone{background:var(--panel);border:2px dashed var(--border);border-radius:12px;padding:40px 20px;text-align:center;cursor:pointer;transition:all .3s;margin-bottom:16px;position:relative}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--green);background:rgba(74,222,128,.05)}
+.drop-zone h2{color:var(--dim);font-size:1.1rem;margin-bottom:8px}
+.drop-zone p{color:var(--muted);font-size:.8rem}
+.drop-zone .hotkey{display:inline-block;background:#334155;color:var(--gold);padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:600;margin-top:8px}
+.drop-zone img{max-width:100%;max-height:300px;border-radius:8px;margin-top:12px;border:1px solid var(--border)}
+
+/* Results */
+.results{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:768px){.results{grid-template-columns:1fr}}
+.card-panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px}
+.card-panel h3{color:var(--green);font-size:.9rem;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.extracted-data{font-size:.85rem;line-height:1.7}
+.extracted-data .label{color:var(--muted);min-width:80px;display:inline-block}
+.extracted-data .value{color:var(--txt);font-weight:600}
+
+/* Poker Cards Display */
+.poker-card{display:inline-block;background:#fff;color:#1a1a1a;font-weight:700;padding:2px 6px;border-radius:4px;margin:0 2px;font-size:.85rem;border:1px solid #ccc;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.poker-card.red{color:#dc2626}
+.poker-card.back{background:linear-gradient(135deg,#1e40af,#2563eb);color:#93c5fd;border-color:#3b82f6}
+
+/* Equity bars */
+.eq-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.eq-lbl{font-size:.8rem;color:#cbd5e1;min-width:80px}
+.eq-bar{flex:1;height:22px;background:#1e293b;border-radius:8px;overflow:hidden}
+.eq-fill{height:100%;border-radius:8px;display:flex;align-items:center;padding-left:8px;font-size:.75rem;font-weight:700;transition:width .5s}
+.eq-hero{background:linear-gradient(90deg,#22c55e,#4ade80);color:#000}
+.eq-villain{background:linear-gradient(90deg,#ef4444,#f87171);color:#fff}
+.eq-tie{background:linear-gradient(90deg,#eab308,#fbbf24);color:#000}
+
+/* Suggestion */
+.suggestion{background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.3);border-radius:8px;padding:12px;margin-top:10px}
+.suggestion h4{color:var(--green);font-size:.85rem;margin-bottom:6px}
+.suggestion p{font-size:.8rem;color:var(--dim);line-height:1.5}
+
+/* Loading */
+.loading{text-align:center;padding:40px}
+.spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* History */
+.history-item{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;transition:all .2s}
+.history-item:hover{border-color:var(--green)}
+.history-item .time{color:var(--muted);font-size:.7rem}
+.history-item .summary{color:var(--txt);font-size:.8rem;margin-top:4px}
+
+/* Settings */
+.settings-row{display:flex;gap:12px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.settings-row label{font-size:.78rem;color:var(--dim)}
+.settings-row select{background:#1e293b;border:1px solid var(--border);color:#fff;border-radius:4px;padding:4px 8px;font-size:.78rem}
+
+/* Control Bar */
+.control-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;padding:12px;background:var(--panel);border:1px solid var(--border);border-radius:10px}
+.control-bar .bar-label{font-size:.78rem;color:var(--muted);margin-right:4px}
+.street-btn{padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:#1e293b;color:var(--dim);font-weight:600;cursor:pointer;font-size:.8rem;transition:all .2s}
+.street-btn:hover{border-color:var(--blue);color:var(--blue);background:rgba(59,130,246,.1)}
+.street-btn.active{border-color:var(--green);color:var(--green);background:rgba(74,222,128,.1)}
+.street-btn:disabled{opacity:.35;cursor:not-allowed}
+.btn-clear{padding:6px 14px;border-radius:6px;border:1px solid var(--red);background:rgba(239,68,68,.1);color:var(--red);font-weight:600;cursor:pointer;font-size:.8rem;transition:all .2s}
+.btn-clear:hover{background:rgba(239,68,68,.2)}
+.btn-new{padding:6px 14px;border-radius:6px;border:1px solid var(--green);background:rgba(74,222,128,.1);color:var(--green);font-weight:600;cursor:pointer;font-size:.8rem;transition:all .2s}
+.btn-new:hover{background:rgba(74,222,128,.2)}
+.control-divider{width:1px;height:24px;background:var(--border);margin:0 4px}
+
+/* Screen Capture Mode */
+.capture-section{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:16px}
+.capture-section h3{color:var(--blue);font-size:.9rem;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.capture-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn-capture{padding:8px 20px;border-radius:8px;border:2px solid var(--green);background:rgba(74,222,128,.15);color:var(--green);font-weight:700;cursor:pointer;font-size:.9rem;transition:all .15s;letter-spacing:.5px}
+.btn-capture:hover{background:rgba(74,222,128,.3);transform:scale(1.03)}
+.btn-capture:active{transform:scale(.97)}
+.btn-capture:disabled{opacity:.35;cursor:not-allowed;transform:none}
+.btn-capture.recording{border-color:var(--red);color:var(--red);background:rgba(239,68,68,.15);animation:pulse-rec 1s infinite}
+@keyframes pulse-rec{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}50%{box-shadow:0 0 12px 3px rgba(239,68,68,.25)}}
+.btn-stream{padding:6px 14px;border-radius:6px;border:1px solid var(--blue);background:rgba(59,130,246,.1);color:var(--blue);font-weight:600;cursor:pointer;font-size:.8rem;transition:all .2s}
+.btn-stream:hover{background:rgba(59,130,246,.2)}
+.btn-stop{padding:6px 14px;border-radius:6px;border:1px solid var(--red);background:rgba(239,68,68,.1);color:var(--red);font-weight:600;cursor:pointer;font-size:.8rem}
+
+.capture-preview{position:relative;margin-top:10px;border-radius:8px;overflow:hidden;background:#000;display:none}
+.capture-preview video{width:100%;display:block;border-radius:8px}
+.capture-preview .crop-overlay{position:absolute;border:2px dashed var(--green);background:rgba(74,222,128,.08);cursor:move;box-shadow:0 0 0 9999px rgba(0,0,0,.45);z-index:2;min-width:40px;min-height:30px}
+.crop-handle{position:absolute;width:12px;height:12px;background:var(--green);border-radius:2px;z-index:3}
+.crop-handle.tl{top:-6px;left:-6px;cursor:nw-resize}.crop-handle.tr{top:-6px;right:-6px;cursor:ne-resize}
+.crop-handle.bl{bottom:-6px;left:-6px;cursor:sw-resize}.crop-handle.br{bottom:-6px;right:-6px;cursor:se-resize}
+.capture-info{display:flex;gap:12px;align-items:center;margin-top:8px;font-size:.75rem;color:var(--muted)}
+.capture-info .hotkey-badge{background:#334155;color:var(--gold);padding:2px 8px;border-radius:4px;font-weight:600;font-size:.72rem}
+
+/* Cost Tracker */
+.cost-btn{position:relative;padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:var(--panel);color:var(--dim);font-size:.78rem;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:6px}
+.cost-btn:hover{border-color:var(--gold);color:var(--gold)}
+.cost-btn .cost-value{color:var(--gold);font-weight:700;font-family:monospace}
+.cost-btn.warn{border-color:var(--red);animation:pulse-warn 1.5s infinite}
+@keyframes pulse-warn{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}50%{box-shadow:0 0 8px 2px rgba(239,68,68,.3)}}
+
+.cost-panel{display:none;position:absolute;top:calc(100% + 8px);right:0;width:340px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.cost-panel.open{display:block}
+.cost-panel h4{color:var(--green);font-size:.85rem;margin-bottom:12px}
+.cost-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:.8rem;border-bottom:1px solid rgba(255,255,255,.05)}
+.cost-row:last-child{border-bottom:none}
+.cost-row .ck{color:var(--muted)}.cost-row .cv{color:var(--txt);font-weight:600;font-family:monospace}
+.cost-total{margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:.9rem;font-weight:700}
+.cost-total .cv{color:var(--gold)}
+.limit-row{margin-top:12px;display:flex;gap:8px;align-items:center}
+.limit-row label{font-size:.75rem;color:var(--muted)}
+.limit-row input{width:80px;background:#111;border:1px solid var(--border);color:var(--gold);padding:4px 8px;border-radius:4px;font-size:.8rem;font-family:monospace;text-align:right}
+.limit-row input:focus{border-color:var(--gold);outline:none}
+.limit-bar{margin-top:8px;height:6px;background:#1e293b;border-radius:3px;overflow:hidden}
+.limit-fill{height:100%;border-radius:3px;transition:width .3s}
+.cost-log{margin-top:10px;max-height:120px;overflow-y:auto;font-size:.72rem}
+.cost-log-item{display:flex;justify-content:space-between;padding:3px 0;color:var(--muted);border-bottom:1px solid rgba(255,255,255,.03)}
+.cost-log-item .model-tag{font-size:.65rem;padding:1px 4px;border-radius:3px;background:#334155;color:var(--dim)}
+.cost-reset{margin-top:8px;font-size:.72rem;color:var(--red);cursor:pointer;text-decoration:underline;text-align:right}
+/* CV Toggle Switch */
+#cvToggle:checked+span{background:var(--green)!important}
+#cvToggle:checked+span+span{transform:translateX(20px)}
+.capture-preview{position:relative}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header" style="position:relative">
+    <h1>&#9824; Poker Vision Analyzer</h1>
+    <p>Cole um screenshot da mesa &bull; An&aacute;lise instant&acirc;nea com IA &bull; Equity + Sugest&otilde;es</p>
+    <div style="position:absolute;top:12px;right:0">
+      <button class="cost-btn" id="costBtn" onclick="toggleCostPanel()">
+        &#128176; <span class="cost-value" id="costDisplay">$0.000</span>
+        <span style="font-size:.65rem;color:var(--muted)" id="costCount">0 calls</span>
+      </button>
+      <div class="cost-panel" id="costPanel">
+        <h4>&#128202; Controle de Gastos</h4>
+        <div class="cost-row"><span class="ck">Tokens input</span><span class="cv" id="totalInput">0</span></div>
+        <div class="cost-row"><span class="ck">Tokens output</span><span class="cv" id="totalOutput">0</span></div>
+        <div class="cost-row"><span class="ck">Chamadas API</span><span class="cv" id="totalCalls">0</span></div>
+        <div class="cost-total"><span>Total gasto</span><span class="cv" id="totalCost">$0.000</span></div>
+        <div class="limit-row">
+          <label>Limite (USD):</label>
+          <input type="number" id="costLimit" value="1.00" step="0.25" min="0" onchange="saveCostLimit()">
+          <span style="font-size:.72rem;color:var(--muted)" id="limitPct">0%</span>
+        </div>
+        <div class="limit-bar"><div class="limit-fill" id="limitFill" style="width:0%;background:var(--green)"></div></div>
+        <div class="cost-log" id="costLog"></div>
+        <div class="cost-reset" onclick="resetCosts()">Zerar contagem</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Key -->
+  <div class="api-section">
+    <label>&#128273; Claude API Key <span style="color:var(--muted);font-size:.75rem">(armazenada apenas localmente no seu navegador)</span></label>
+    <div class="api-row">
+      <input type="password" id="apiKey" placeholder="sk-ant-api03-..." autocomplete="off">
+      <button class="btn btn-green" onclick="saveApiKey()">Salvar</button>
+      <span id="apiStatus"><span class="status-dot no"></span></span>
+    </div>
+    <div class="settings-row">
+      <label>Modelo:</label>
+      <select id="modelSelect">
+        <option value="claude-sonnet-4-20250514">Sonnet 4 (recomendado)</option>
+        <option value="claude-haiku-4-5-20251001">Haiku 4.5 (r&aacute;pido, menos preciso)</option>
+        <option value="claude-opus-4-20250514">Opus 4 (m&aacute;xima precis&atilde;o)</option>
+      </select>
+      <label>Resolu&ccedil;&atilde;o:</label>
+      <select id="imgRes">
+        <option value="768">768px (turbo)</option>
+        <option value="1024">1024px (r&aacute;pido)</option>
+        <option value="1536">1536px (bom)</option>
+        <option value="1920" selected>1920px (recomendado)</option>
+        <option value="2560">2560px (QHD)</option>
+        <option value="3840">3840px (4K m&aacute;ximo)</option>
+        <option value="0">Original (sem resize)</option>
+      </select>
+      <label>MC sim:</label>
+      <select id="mcIter">
+        <option value="5000" selected>5k (r&aacute;pido)</option>
+        <option value="15000">15k (padr&atilde;o)</option>
+        <option value="50000">50k (preciso)</option>
+      </select>
+    </div>
+    <div class="settings-row" style="margin-top:6px">
+      <label>&#127183; Meu nick:</label>
+      <input type="text" id="heroNick" placeholder="ex: TurnZero" value="" style="background:#111;border:1px solid var(--border);color:var(--gold);padding:4px 10px;border-radius:4px;font-size:.85rem;font-weight:600;width:140px" onchange="saveHeroNick()">
+      <label>&#129494; Seats:</label>
+      <select id="tableSeats" style="background:#1e293b;border:1px solid var(--border);color:var(--gold);border-radius:4px;padding:4px 8px;font-size:.85rem;font-weight:600" onchange="saveTableSeats()">
+        <option value="2">2 (HU)</option>
+        <option value="3">3-max</option>
+        <option value="4">4-max</option>
+        <option value="5">5-max</option>
+        <option value="6">6-max</option>
+        <option value="7">7-max</option>
+        <option value="8" selected>8-max</option>
+        <option value="9">9-max</option>
+        <option value="10">10-max</option>
+      </select>
+      <label style="cursor:pointer"><input type="checkbox" id="enhanceImg" onchange="saveEnhance()" style="margin-right:3px;accent-color:var(--gold)">Boost imagem</label>
+    </div>
+  </div>
+
+  <!-- BTN Seat Selector - Mesa Visual -->
+  <div class="api-section" style="border-color:var(--gold);padding:10px 14px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <h4 style="color:var(--gold);font-size:.85rem;margin:0">&#127922; Marcar BTN na mesa</h4>
+      <span id="btnSeatInfo" style="color:var(--green);font-size:.78rem;font-weight:600"></span>
+    </div>
+    <div id="seatMapContainer" style="position:relative;width:280px;height:160px;margin:0 auto;border:2px solid var(--border);border-radius:50%;background:rgba(0,80,0,.15)">
+      <!-- Seats posicionados em oval (gerado por JS) -->
+    </div>
+    <p style="font-size:.65rem;color:var(--muted);margin-top:6px;text-align:center">Clique no seat onde est&aacute; o bot&atilde;o D. Posi&ccedil;&otilde;es s&atilde;o calculadas automaticamente no sentido hor&aacute;rio.</p>
+  </div>
+
+  <!-- CV Local Engine -->
+  <div class="api-section" style="border-color:var(--green);border-style:dashed">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h4 style="color:var(--green);font-size:.85rem">&#9889; Motor de Vis&atilde;o Local (CV)</h4>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:.75rem;font-weight:600" id="cvModeLabel">AI Claude</span>
+        <label style="position:relative;display:inline-block;width:40px;height:20px;cursor:pointer">
+          <input type="checkbox" id="cvToggle" onchange="toggleCVMode()" style="opacity:0;width:0;height:0">
+          <span style="position:absolute;inset:0;background:var(--border);border-radius:20px;transition:.3s"></span>
+          <span style="position:absolute;left:2px;top:2px;width:16px;height:16px;background:var(--txt);border-radius:50%;transition:.3s" id="cvToggleKnob"></span>
+        </label>
+      </div>
+    </div>
+    <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+      <div>
+        <span style="font-size:.72rem;color:var(--muted)">Templates aprendidos:</span>
+        <span style="font-size:.8rem;font-weight:600;color:var(--gold)" id="cvTemplateCount">0/52 cartas</span>
+        <span style="font-size:.72rem;font-weight:600;margin-left:4px" id="cvLearnPct">0%</span>
+      </div>
+      <div style="flex:1;min-width:100px;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+        <div style="height:100%;background:var(--gold);border-radius:3px;transition:width .3s;width:0%" id="cvLearnBar"></div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sec" style="font-size:.72rem;padding:4px 10px" onclick="startROICalibration()">&#127919; Calibrar ROIs</button>
+        <button class="btn btn-sec" style="font-size:.72rem;padding:4px 10px" onclick="CVEngine.clearTemplates()">&#128465; Limpar Templates</button>
+      </div>
+    </div>
+    <p style="font-size:.65rem;color:var(--muted);margin-top:6px">
+      Modo h&iacute;brido: calibre as ROIs, jogue com AI → templates s&atilde;o aprendidos automaticamente → ative CV Local quando tiver cartas suficientes.
+      <span style="color:var(--gold)">ROI: <span id="cvROIStatus">N&atilde;o calibrado</span></span>
+      <br><span id="pyServerStatus" style="font-size:.7rem">○ OCR Server offline</span>
+    </p>
+    <!-- OCR Server URL configurável -->
+    <div style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <label style="font-size:.72rem;color:var(--muted);white-space:nowrap">&#127760; OCR Server:</label>
+      <input id="ocrServerUrl" type="text" placeholder="https://xxx-8080.proxy.runpod.net"
+        style="flex:1;min-width:180px;background:#0f172a;border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 8px;font-size:.75rem;font-family:monospace"
+        onchange="saveOCRServerUrl()" onkeydown="if(event.key==='Enter'){saveOCRServerUrl();checkPyServer()}">
+      <button class="btn btn-sec" style="font-size:.7rem;padding:3px 8px" onclick="checkPyServer()">&#128268; Testar</button>
+    </div>
+  </div>
+
+  <!-- Screen Capture Mode -->
+  <div class="capture-section">
+    <h3>&#127909; Captura Cont&iacute;nua</h3>
+    <div class="capture-controls">
+      <button class="btn-stream" id="btnStartStream" onclick="startScreenStream()">&#128250; Compartilhar Tela</button>
+      <button class="btn-stream" id="btnStartOBS" onclick="startOBSStream()" style="border-color:#9333ea;color:#9333ea">&#127909; OBS Virtual Cam</button>
+      <button class="btn-stop" id="btnStopStream" onclick="stopScreenStream()" style="display:none">&#9632; Parar</button>
+      <button class="btn-capture" id="btnCapture" onclick="captureFrame()" disabled>&#9889; CAPTURAR &amp; ANALISAR</button>
+      <span style="font-size:.75rem;color:var(--muted)" id="streamStatus">Stream inativo</span>
+    </div>
+    <div class="capture-preview" id="capturePreview">
+      <video id="captureVideo" autoplay muted playsinline></video>
+      <div class="crop-overlay" id="cropOverlay">
+        <div class="crop-handle tl" data-handle="tl"></div>
+        <div class="crop-handle tr" data-handle="tr"></div>
+        <div class="crop-handle bl" data-handle="bl"></div>
+        <div class="crop-handle br" data-handle="br"></div>
+      </div>
+    </div>
+
+    <!-- ROI Calibration Area -->
+    <div id="roiCalibArea" style="display:none;margin-top:10px">
+      <div style="background:rgba(0,0,0,.85);padding:10px 14px;border-radius:8px;border:1px solid var(--gold);margin-bottom:6px">
+        <p style="color:var(--gold);font-size:.8rem;margin-bottom:8px;text-align:center">Selecione o que marcar, depois arraste na imagem. Pode remarcar a qualquer momento.</p>
+        <div id="roiButtons" style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center">
+          <button class="btn btn-sec roi-btn" data-roi="hero1" onclick="selectROI('hero1')" style="font-size:.7rem;padding:3px 10px;border:2px solid transparent">&#9824; Hero 1</button>
+          <button class="btn btn-sec roi-btn" data-roi="hero2" onclick="selectROI('hero2')" style="font-size:.7rem;padding:3px 10px;border:2px solid transparent">&#9824; Hero 2</button>
+          <span style="color:var(--border);margin:0 2px">|</span>
+          <button class="btn btn-sec roi-btn" data-roi="board1" onclick="selectROI('board1')" style="font-size:.7rem;padding:3px 10px;border:2px solid transparent">&#127183; Board 1</button>
+          <button class="btn btn-sec roi-btn" data-roi="board2" onclick="selectROI('board2')" style="font-size:.7rem;padding:3px 10px;border:2px solid transparent">&#127183; Board 2</button>
+          <button class="btn btn-sec roi-btn" data-roi="board3" onclick="selectROI('board3')" style="font-size:.7rem;padding:3px 10px;border:2px solid transparent">&#127183; Board 3</button>
+          <button class="btn btn-sec roi-btn" data-roi="board4" onclick="selectROI('board4')" style="font-size:.7rem;padding:3px 10px;border:2px solid transparent">&#127183; Board 4</button>
+          <button class="btn btn-sec roi-btn" data-roi="board5" onclick="selectROI('board5')" style="font-size:.7rem;padding:3px 10px;border:2px solid transparent">&#127183; Board 5</button>
+          <span style="color:var(--border);margin:0 2px">|</span>
+          <button class="btn btn-sec roi-btn" data-roi="pot" onclick="selectROI('pot')" style="font-size:.7rem;padding:3px 10px;border:2px solid transparent">&#128176; Pot</button>
+          <button class="btn btn-sec roi-btn" data-roi="heroStack" onclick="selectROI('heroStack')" style="font-size:.7rem;padding:3px 10px;border:2px solid transparent">&#128178; Hero Stack</button>
+          <button class="btn btn-sec roi-btn" data-roi="blinds" onclick="selectROI('blinds')" style="font-size:.7rem;padding:3px 10px;border:2px solid transparent">&#128064; Blinds</button>
+          <span style="color:var(--border);margin:0 2px">|</span>
+          <button class="btn btn-sec roi-btn" data-roi="lastAction" onclick="selectROI('lastAction')" style="font-size:.7rem;padding:3px 10px;border:2px solid transparent;color:#f43f5e">&#9889; Ação</button>
+          <button class="btn btn-sec roi-btn" data-roi="betToCall" onclick="selectROI('betToCall')" style="font-size:.7rem;padding:3px 10px;border:2px solid transparent;color:#f43f5e">&#128176; Bet/Call $</button>
+          <button class="btn btn-sec roi-btn" data-roi="totalBet" onclick="selectROI('totalBet')" style="font-size:.7rem;padding:3px 10px;border:2px solid transparent;color:#f43f5e">&#127920; Total Bet</button>
+          <span style="color:var(--border);margin:0 2px">|</span>
+          <span id="dealerBtns" style="display:inline-flex;gap:4px;flex-wrap:wrap"></span>
+          <span style="color:var(--border);margin:0 2px">|</span>
+          <span id="seatROIBtns" style="display:inline-flex;gap:2px;flex-wrap:wrap"></span>
+        </div>
+        <div style="display:flex;justify-content:center;gap:8px;margin-top:8px">
+          <button class="btn btn-green" style="font-size:.72rem;padding:4px 18px" onclick="finishROICalibration()">&#10003; Salvar</button>
+          <button class="btn btn-sec" style="font-size:.72rem;padding:4px 14px" onclick="recaptureROIFrame()">&#128247; Recapturar</button>
+          <button class="btn btn-red" style="font-size:.72rem;padding:4px 14px;display:none" id="roiDeleteBtn" onclick="deleteSelectedROI()">&#128465; Apagar</button>
+          <button class="btn btn-red" style="font-size:.72rem;padding:4px 14px" onclick="cancelROICalibration()">Cancelar</button>
+        </div>
+      </div>
+      <div style="position:relative;display:inline-block;width:100%">
+        <img id="roiCalibImg" style="width:100%;border-radius:8px;border:1px solid var(--border);display:block">
+        <div id="roiOverlay" style="position:absolute;inset:0;z-index:10;cursor:crosshair"></div>
+      </div>
+      <p id="roiActiveLabel" style="text-align:center;font-size:.75rem;color:var(--muted);margin-top:4px">Selecione um bot&atilde;o acima e arraste na imagem</p>
+    </div>
+    <div class="capture-info" id="captureInfo" style="display:none">
+      <span>Ajuste o ret&acirc;ngulo verde sobre a mesa</span>
+      <span class="hotkey-badge">Espa&ccedil;o = Capturar</span>
+      <span id="cropDims" style="color:var(--dim);font-family:monospace"></span>
+    </div>
+    <p style="font-size:.68rem;color:var(--muted);margin-top:6px;display:none" id="captureTip">Dica: ao compartilhar, selecione a <b>janela do GGPoker</b> (aba "Janela") ao inv&eacute;s do monitor inteiro — melhor resolu&ccedil;&atilde;o e sem elementos extras.</p>
+  </div>
+
+  <!-- Drop Zone (alternativa manual) -->
+  <details style="margin-bottom:16px">
+    <summary style="color:var(--muted);font-size:.8rem;cursor:pointer;padding:6px 0">Ou cole/arraste um screenshot manualmente...</summary>
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()" style="margin-top:8px">
+      <h2>&#128247; Arraste um screenshot aqui ou clique</h2>
+      <p>Tamb&eacute;m funciona com <strong>Ctrl+V</strong></p>
+      <div id="preview"></div>
+    </div>
+  </details>
+  <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="handleFile(this.files[0])">
+
+  <!-- Results -->
+  <div id="resultsArea"></div>
+
+  <!-- History -->
+  <div id="historyArea" style="margin-top:20px">
+    <h3 style="color:var(--dim);font-size:.85rem;margin-bottom:8px">&#128340; Hist&oacute;rico</h3>
+    <div id="historyList"><span style="color:var(--muted);font-size:.8rem">Nenhuma an&aacute;lise ainda</span></div>
+  </div>
+</div>
+
+<script>
+// ============ SCREEN CAPTURE ============
+let screenStream=null;
+let cropRect={x:2,y:2,w:96,h:96}; // % do preview — default cobre mesa inteira
+let isDragging=false,dragType=null,dragStart={x:0,y:0},cropStart={};
+
+async function startScreenStream(){
+  try{
+    screenStream=await navigator.mediaDevices.getDisplayMedia({
+      video:{
+        cursor:'never',
+        displaySurface:'monitor',
+        // Forçar qualidade máxima do stream
+        width:{ideal:3840},
+        height:{ideal:2160},
+        frameRate:{ideal:30}
+      },
+      audio:false,
+      preferCurrentTab:false,
+      selfBrowserSurface:'exclude'
+    });
+    const video=document.getElementById('captureVideo');
+    video.srcObject=screenStream;
+
+    // Aguardar metadata para confirmar resolução real
+    video.addEventListener('loadedmetadata',()=>{
+      const track=screenStream.getVideoTracks()[0];
+      const settings=track.getSettings();
+      document.getElementById('streamStatus').textContent=
+        `Stream ativo (${settings.width}×${settings.height})`;
+    },{once:true});
+    document.getElementById('capturePreview').style.display='block';
+    document.getElementById('captureInfo').style.display='flex';
+    document.getElementById('btnStartStream').style.display='none';
+    document.getElementById('btnStopStream').style.display='';
+    document.getElementById('btnCapture').disabled=false;
+    document.getElementById('streamStatus').textContent='Stream ativo';
+    document.getElementById('streamStatus').style.color='var(--green)';
+    document.getElementById('captureTip').style.display='block';
+
+    // Restaurar crop salvo
+    const savedCrop=localStorage.getItem('poker_vision_crop');
+    if(savedCrop)try{cropRect=JSON.parse(savedCrop)}catch(e){}
+    applyCropOverlay();
+
+    // Quando o usuário para o compartilhamento pelo navegador
+    screenStream.getVideoTracks()[0].onended=()=>stopScreenStream();
+  }catch(e){
+    document.getElementById('streamStatus').textContent='Cancelado: '+e.message;
+    document.getElementById('streamStatus').style.color='var(--red)';
+  }
+}
+
+// ── OBS Virtual Camera: captura via getUserMedia (bypassa proteção de tela) ──
+async function startOBSStream(){
+  try{
+    const devices=await navigator.mediaDevices.enumerateDevices();
+    const videoCams=devices.filter(d=>d.kind==='videoinput');
+    // Procurar OBS Virtual Camera pelo nome
+    let obsDevice=videoCams.find(d=>/obs|virtual/i.test(d.label));
+    if(!obsDevice&&videoCams.length>1){
+      obsDevice=videoCams[videoCams.length-1];
+    }
+    const constraints={
+      video:{
+        deviceId:obsDevice?{exact:obsDevice.deviceId}:undefined,
+        width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}
+      },audio:false
+    };
+    screenStream=await navigator.mediaDevices.getUserMedia(constraints);
+    const video=document.getElementById('captureVideo');
+    video.srcObject=screenStream;
+    video.addEventListener('loadedmetadata',()=>{
+      const s=screenStream.getVideoTracks()[0].getSettings();
+      document.getElementById('streamStatus').textContent=`OBS Cam (${s.width}×${s.height})`;
+    },{once:true});
+    document.getElementById('capturePreview').style.display='block';
+    document.getElementById('captureInfo').style.display='flex';
+    document.getElementById('btnStartStream').style.display='none';
+    document.getElementById('btnStartOBS').style.display='none';
+    document.getElementById('btnStopStream').style.display='';
+    document.getElementById('btnCapture').disabled=false;
+    document.getElementById('streamStatus').textContent='OBS Virtual Cam ativo';
+    document.getElementById('streamStatus').style.color='#9333ea';
+    const savedCrop=localStorage.getItem('poker_vision_crop');
+    if(savedCrop)try{cropRect=JSON.parse(savedCrop)}catch(e){}
+    applyCropOverlay();
+    screenStream.getVideoTracks()[0].onended=()=>stopScreenStream();
+  }catch(e){
+    document.getElementById('streamStatus').textContent='OBS erro: '+e.message;
+    document.getElementById('streamStatus').style.color='var(--red)';
+    alert('OBS Virtual Camera não encontrada.\n\n1. Abra o OBS Studio\n2. Adicione "Game Capture" ou "Window Capture" do GGPoker\n3. Clique "Start Virtual Camera"\n4. Tente novamente');
+  }
+}
+
+function stopScreenStream(){
+  if(screenStream){screenStream.getTracks().forEach(t=>t.stop());screenStream=null}
+  document.getElementById('captureVideo').srcObject=null;
+  document.getElementById('capturePreview').style.display='none';
+  document.getElementById('captureInfo').style.display='none';
+  document.getElementById('btnStartStream').style.display='';
+  document.getElementById('btnStartOBS').style.display='';
+  document.getElementById('btnStopStream').style.display='none';
+  document.getElementById('btnCapture').disabled=true;
+  document.getElementById('streamStatus').textContent='Stream inativo';
+  document.getElementById('streamStatus').style.color='var(--muted)';
+  document.getElementById('captureTip').style.display='none';
+}
+
+function applyCropOverlay(){
+  const ov=document.getElementById('cropOverlay');
+  ov.style.left=cropRect.x+'%';ov.style.top=cropRect.y+'%';
+  ov.style.width=cropRect.w+'%';ov.style.height=cropRect.h+'%';
+  document.getElementById('cropDims').textContent=
+    `${cropRect.w.toFixed(0)}% × ${cropRect.h.toFixed(0)}%`;
+  localStorage.setItem('poker_vision_crop',JSON.stringify(cropRect));
+}
+
+// Drag crop overlay
+(function initCropDrag(){
+  const preview=document.getElementById('capturePreview');
+  const ov=document.getElementById('cropOverlay');
+
+  function getPos(e){
+    const r=preview.getBoundingClientRect();
+    return{x:(e.clientX-r.left)/r.width*100,y:(e.clientY-r.top)/r.height*100};
+  }
+
+  ov.addEventListener('mousedown',e=>{
+    e.preventDefault();e.stopPropagation();
+    const handle=e.target.dataset?.handle;
+    isDragging=true;
+    dragType=handle||'move';
+    dragStart=getPos(e);
+    cropStart={...cropRect};
+  });
+
+  document.addEventListener('mousemove',e=>{
+    if(!isDragging)return;
+    const p=getPos(e);
+    const dx=p.x-dragStart.x,dy=p.y-dragStart.y;
+
+    if(dragType==='move'){
+      cropRect.x=Math.max(0,Math.min(100-cropStart.w,cropStart.x+dx));
+      cropRect.y=Math.max(0,Math.min(100-cropStart.h,cropStart.y+dy));
+    }else{
+      // Resize handles
+      let nx=cropStart.x,ny=cropStart.y,nw=cropStart.w,nh=cropStart.h;
+      if(dragType.includes('l')){nx=cropStart.x+dx;nw=cropStart.w-dx}
+      if(dragType.includes('r')){nw=cropStart.w+dx}
+      if(dragType.includes('t')){ny=cropStart.y+dy;nh=cropStart.h-dy}
+      if(dragType.includes('b')){nh=cropStart.h+dy}
+      // Mínimo 5% x 5%
+      if(nw>=5&&nh>=5&&nx>=0&&ny>=0&&nx+nw<=100&&ny+nh<=100){
+        cropRect={x:nx,y:ny,w:nw,h:nh};
+      }
+    }
+    applyCropOverlay();
+  });
+
+  document.addEventListener('mouseup',()=>{isDragging=false;dragType=null});
+})();
+
+// Captura frame do vídeo, recorta pela região, envia para análise
+function captureFrame(){
+  if(!screenStream)return;
+  const video=document.getElementById('captureVideo');
+  const vw=video.videoWidth,vh=video.videoHeight;
+  if(!vw||!vh)return;
+
+  // Calcular região de crop em pixels do vídeo (resolução nativa do stream)
+  const cx=Math.round(cropRect.x/100*vw);
+  const cy=Math.round(cropRect.y/100*vh);
+  const cw=Math.round(cropRect.w/100*vw);
+  const ch=Math.round(cropRect.h/100*vh);
+
+  // Desenhar frame recortado em canvas — resolução NATIVA (sem compressão)
+  const canvas=document.createElement('canvas');
+  canvas.width=cw;canvas.height=ch;
+  const ctx=canvas.getContext('2d');
+  // imageSmoothingQuality alto para melhor interpolação
+  ctx.imageSmoothingEnabled=true;
+  ctx.imageSmoothingQuality='high';
+  ctx.drawImage(video,cx,cy,cw,ch,0,0,cw,ch);
+
+  // PNG para máxima qualidade (sem perda de compressão JPEG)
+  const base64=canvas.toDataURL('image/png');
+
+  // Info de resolução da captura
+  const capInfo=`${cw}×${ch}px | stream ${vw}×${vh}`;
+
+  // Mostrar preview com info
+  document.getElementById('preview').innerHTML=`
+    <img src="${base64}" alt="Captura" style="max-width:100%;max-height:200px;border-radius:8px;margin-top:8px;border:1px solid var(--border)">
+    <p style="font-size:.7rem;color:var(--muted);margin-top:4px;text-align:center">${capInfo} | ${(base64.length/1024).toFixed(0)}KB</p>`;
+
+  // Feedback visual no botão
+  const btn=document.getElementById('btnCapture');
+  btn.textContent='Enviando...';btn.classList.add('recording');
+  setTimeout(()=>{btn.textContent='⚡ CAPTURAR & ANALISAR';btn.classList.remove('recording')},1500);
+
+  // Verificar se CV Local está ativo
+  if(CVEngine.enabled&&CVEngine.roiConfig){
+    analyzeWithCV(base64);
+    return;
+  }
+
+  // Redimensionar e enviar via AI — com timing detalhado
+  const tCapture=performance.now();
+  const maxRes=+document.getElementById('imgRes').value||0;
+  resizeImage(base64,maxRes).then(optimized=>{
+    const resizeMs=(performance.now()-tCapture).toFixed(0);
+    analyzeScreenshot(optimized,{captureMs:'<1',resizeMs});
+  });
+}
+
+// ============ OCR SERVER INTEGRATION ============
+let pyServerAvailable=false;
+function getOCRServerUrl(){
+  const el=document.getElementById('ocrServerUrl');
+  return(el&&el.value.trim())||'http://127.0.0.1:8080';
+}
+function saveOCRServerUrl(){
+  const url=getOCRServerUrl();
+  localStorage.setItem('poker_vision_ocr_server',url);
+  pyServerAvailable=false;
+  const el=document.getElementById('pyServerStatus');
+  if(el)el.innerHTML='<span style="color:var(--gold)">⏳ URL atualizada — clique Testar</span>';
+}
+function loadOCRServerUrl(){
+  const saved=localStorage.getItem('poker_vision_ocr_server');
+  if(saved){const el=document.getElementById('ocrServerUrl');if(el)el.value=saved;}
+}
+
+// Verificar se servidor OCR está rodando
+async function checkPyServer(){
+  const PY_SERVER=getOCRServerUrl();
+  const el=document.getElementById('pyServerStatus');
+  if(el)el.innerHTML='<span style="color:var(--gold)">⏳ Conectando...</span>';
+  try{
+    const r=await fetch(PY_SERVER+'/health',{signal:AbortSignal.timeout(4000)});
+    if(r.ok){
+      const d=await r.json();
+      pyServerAvailable=true;
+      if(el)el.innerHTML='<span style="color:var(--green)">● OCR Server ativo'+(d.ocr_engine?' ('+d.ocr_engine+')':'')+(d.templates!=null?' — '+d.templates+' templates':'')+'</span>';
+      return true;
+    }
+  }catch(e){console.warn('OCR server check failed:',e.message)}
+  pyServerAvailable=false;
+  if(el)el.innerHTML='<span style="color:var(--red)">✗ OCR Server offline — verifique a URL</span>';
+  return false;
+}
+
+// Chamar servidor OCR para análise completa (novo formato: {table, seats[]})
+async function analyzeWithPython(base64){
+  const PY_SERVER=getOCRServerUrl();
+  const body={image:base64,btn_seat_idx:btnSeatIdx};
+  const resp=await fetch(PY_SERVER+'/analyze',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  });
+  if(!resp.ok)throw new Error('OCR server error: '+resp.status);
+  const raw=await resp.json();
+  // Converter novo formato {table,seats[]} → formato legado para manter compatibilidade
+  if(raw.table&&raw.seats){
+    raw.data=convertServerResponse(raw.table,raw.seats);
+    raw.data._seats=raw.seats; // Guardar referência completa
+    raw.data._table=raw.table;
+    const hero=raw.seats.find(s=>s.is_hero);
+    raw.success=hero&&hero.cards&&hero.cards.filter(c=>c).length===2;
+  }
+  return raw;
+}
+
+// Converter novo formato {table, seats[]} → formato legado do renderResults
+function convertServerResponse(table,seats){
+  const hero=seats.find(s=>s.is_hero)||{};
+  const villains=seats.filter(s=>!s.is_hero&&s.active);
+  return{
+    hero_cards:hero.cards||['',''],
+    hero_stack:hero.stack||0,
+    hero_position:hero.position||'?',
+    board:table.board||[],
+    pot:table.pot||0,
+    street:table.street||'preflop',
+    blinds:table.blinds||'',
+    last_action:table.last_action||'',
+    bet_to_call:table.bet_to_call||0,
+    total_bet:table.total_bet||0,
+    num_players_active:table.num_active||0,
+    tournament:table.tournament!==false,
+    villain_names:villains.map(v=>v.name||'?'),
+    villain_stacks:villains.map(v=>v.stack||0),
+    villain_cards:villains.map(v=>v.cards||['','']),
+    villain_positions:villains.map(v=>v.position||'?'),
+    villain_bets:villains.map(v=>v.bet||0),
+    villain_bounties:villains.map(v=>v.bounty||''),
+    hero_bounty:hero.bounty||'',
+    notes:table.notes||'',
+    // Referência completa para o novo rendering
+    _seats:seats,
+    _table:table,
+  };
+}
+
+// teachPythonServer não é mais necessário (servidor não usa templates)
+function teachPythonServer(){}
+
+// Checar servidor OCR a cada 15s (só se URL configurada)
+setInterval(()=>{
+  const url=getOCRServerUrl();
+  if(url&&url!=='http://127.0.0.1:8080')checkPyServer();
+},15000);
+setTimeout(()=>{
+  const url=getOCRServerUrl();
+  if(url&&url!=='http://127.0.0.1:8080')checkPyServer();
+},1500);
+
+// Análise via CV Local com fallback para AI
+async function analyzeWithCV(base64){
+  const resultsArea=document.getElementById('resultsArea');
+  const t0=performance.now();
+
+  // ── Tentar Python Server primeiro (mais preciso) ──
+  if(pyServerAvailable){
+    resultsArea.innerHTML='<div class="loading"><div class="spinner"></div><p style="color:var(--green)">Analisando via OCR Server (Chandra OCR + OpenCV)...</p><p style="color:var(--gold);font-family:monospace;font-size:.9rem" id="cvTimer">0.0s</p></div>';
+    const cvTimerInterval=setInterval(()=>{
+      const el=document.getElementById('cvTimer');
+      if(el)el.textContent=((performance.now()-t0)/1000).toFixed(1)+'s';
+    },100);
+    try{
+      const result=await analyzeWithPython(base64);
+      clearInterval(cvTimerInterval);
+      if(result.success&&!result.fallbackRecommended){
+        const timing={captureMs:'<1',resizeMs:'0',apiMs:'0',mcMs:'0',cvMs:((performance.now()-t0)).toFixed(0),mode:'Python CV'};
+        lastAnalysis={data:result.data,screenshot:base64,fullBoard:(result.data.board||[]).map(c=>parseCard(c)).filter(Boolean),timing};
+        processAnalysis(result.data,base64,timing);
+        return;
+      }
+      // Python não confiante, fallback...
+      clearInterval(cvTimerInterval);
+      const reason=result.reason||`Confiança baixa (${((result.confidence||0)*100).toFixed(0)}%)`;
+      resultsArea.innerHTML=`<div class="loading"><div class="spinner"></div><p style="color:var(--gold)">Python incerto (${reason}) — usando AI...</p></div>`;
+      const maxRes=+document.getElementById('imgRes').value||0;
+      const optimized=await resizeImage(base64,maxRes);
+      analyzeScreenshot(optimized,{captureMs:'<1',resizeMs:'0',cvFallback:reason});
+      return;
+    }catch(e){
+      clearInterval(cvTimerInterval);
+      console.warn('Python server error, falling back to browser CV:',e);
+      pyServerAvailable=false;
+    }
+  }
+
+  // ── Fallback: CV Local no browser (Tesseract.js) ──
+  resultsArea.innerHTML='<div class="loading"><div class="spinner"></div><p style="color:var(--green)">Analisando localmente (CV + OCR)...</p><p style="color:var(--muted);font-size:.75rem">Cards → Pot → Stacks → Nomes → Posições</p><p style="color:var(--gold);font-family:monospace;font-size:.9rem" id="cvTimer">0.0s</p></div>';
+  const cvTimerInterval=setInterval(()=>{
+    const el=document.getElementById('cvTimer');
+    if(el)el.textContent=((performance.now()-t0)/1000).toFixed(1)+'s';
+  },100);
+
+  const result=await CVEngine.analyzeLocal(base64);
+  clearInterval(cvTimerInterval);
+
+  if(result.success&&!result.fallbackRecommended){
+    // CV Local funcionou!
+    const elapsed=result.elapsed;
+    const timing={captureMs:'<1',resizeMs:'0',apiMs:'0',mcMs:'0',cvMs:((performance.now()-t0)).toFixed(0),mode:'CV Local'};
+    lastAnalysis={data:result.data,screenshot:base64,fullBoard:(result.data.board||[]).map(c=>parseCard(c)).filter(Boolean),timing};
+    processAnalysis(result.data,base64,timing);
+    return;
+  }
+
+  // Fallback para AI
+  const reason=result.reason||`Confiança baixa (${(result.confidence*100).toFixed(0)}%)`;
+  resultsArea.innerHTML=`<div class="loading"><div class="spinner"></div><p style="color:var(--gold)">CV incerto (${reason}) — usando AI...</p></div>`;
+
+  const tCapture=performance.now();
+  const maxRes=+document.getElementById('imgRes').value||0;
+  const optimized=await resizeImage(base64,maxRes);
+  const resizeMs=(performance.now()-tCapture).toFixed(0);
+  analyzeScreenshot(optimized,{captureMs:'<1',resizeMs,cvFallback:reason});
+}
+
+// Hotkey: Espaço para capturar (quando stream ativo)
+document.addEventListener('keydown',e=>{
+  if(!screenStream)return;
+  // Ignorar se foco em input/select
+  if(['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName))return;
+  if(e.code==='Space'){
+    e.preventDefault();
+    captureFrame();
+  }
+});
+
+// ============ HERO NICK & TABLE CONFIG ============
+function saveHeroNick(){
+  localStorage.setItem('poker_vision_hero_nick',document.getElementById('heroNick').value.trim());
+}
+function saveTableSeats(){
+  localStorage.setItem('poker_vision_table_seats',document.getElementById('tableSeats').value);
+}
+function saveEnhance(){
+  localStorage.setItem('poker_vision_enhance',document.getElementById('enhanceImg').checked);
+}
+(function loadPlayerConfig(){
+  const nick=localStorage.getItem('poker_vision_hero_nick');
+  if(nick)document.getElementById('heroNick').value=nick;
+  const seats=localStorage.getItem('poker_vision_table_seats');
+  if(seats)document.getElementById('tableSeats').value=seats;
+  const enhance=localStorage.getItem('poker_vision_enhance');
+  if(enhance==='true')document.getElementById('enhanceImg').checked=true;
+  // Carregar URL do servidor OCR
+  loadOCRServerUrl();
+})();
+
+// ============ BTN SEAT SELECTOR (Mesa Visual) ============
+let btnSeatIdx=-1; // -1 = não definido, 0-7 = seat index (0=Hero)
+
+// Posições dos seats em oval (% de width/height do container)
+// Seat 0 = bottom center (Hero), ANTI-HORÁRIO (como GGPoker)
+const SEAT_POSITIONS={
+  8:[
+    {x:50,y:92},  // S1: bottom center (HERO)
+    {x:15,y:78},  // S2: bottom-left
+    {x:5,y:45},   // S3: left
+    {x:18,y:12},  // S4: top-left
+    {x:50,y:2},   // S5: top center
+    {x:82,y:12},  // S6: top-right
+    {x:95,y:45},  // S7: right
+    {x:85,y:78},  // S8: bottom-right
+  ],
+  6:[
+    {x:50,y:92},{x:12,y:70},{x:12,y:20},{x:50,y:2},{x:88,y:20},{x:88,y:70},
+  ],
+  9:[
+    {x:50,y:92},{x:18,y:82},{x:5,y:50},{x:15,y:15},{x:40,y:2},{x:60,y:2},{x:85,y:15},{x:95,y:50},{x:82,y:82},
+  ],
+};
+
+function buildSeatMap(){
+  const seats=+document.getElementById('tableSeats').value||8;
+  const posMap=getPositionMap(seats);
+  const positions=SEAT_POSITIONS[seats]||SEAT_POSITIONS[8];
+  const container=document.getElementById('seatMapContainer');
+  if(!container)return;
+
+  container.innerHTML=positions.map((pos,i)=>{
+    const isHero=i===0;
+    const isBTN=i===btnSeatIdx;
+    const posLabel=btnSeatIdx>=0?posMap[(posMap.indexOf('BTN')+(seats-btnSeatIdx+i))%seats]:'?';
+    return `<button onclick="selectBTNSeat(${i})" style="
+      position:absolute;left:${pos.x}%;top:${pos.y}%;transform:translate(-50%,-50%);
+      width:${isHero?36:30}px;height:${isHero?36:30}px;border-radius:50%;
+      border:2px solid ${isBTN?'var(--gold)':isHero?'var(--green)':'var(--border)'};
+      background:${isBTN?'rgba(251,191,36,.3)':isHero?'rgba(74,222,128,.15)':'rgba(255,255,255,.05)'};
+      color:${isBTN?'var(--gold)':isHero?'var(--green)':'var(--dim)'};
+      font-size:.6rem;font-weight:700;cursor:pointer;padding:0;
+      ${isBTN?'box-shadow:0 0 8px rgba(251,191,36,.5);':''}
+    " title="Seat ${i+1}${isHero?' (Hero)':''}${isBTN?' = BTN':''}">
+      ${isBTN?'D':isHero?'H':(i+1)}
+    </button>`;
+  }).join('');
+
+  // Info text
+  updateBTNInfo();
+}
+
+function selectBTNSeat(idx){
+  const seats=+document.getElementById('tableSeats').value||8;
+  btnSeatIdx=idx;
+  localStorage.setItem('poker_vision_btn_seat',idx);
+  buildSeatMap();
+}
+
+function updateBTNInfo(){
+  const el=document.getElementById('btnSeatInfo');
+  if(!el)return;
+  if(btnSeatIdx<0){
+    el.innerHTML='<span style="color:var(--red)">BTN n&atilde;o marcado</span>';
+    return;
+  }
+  const seats=+document.getElementById('tableSeats').value||8;
+  const posMap=getPositionMap(seats);
+  // Hero (seat 0) position: quantos seats do BTN ao Hero clockwise
+  const heroPos=posMap[(seats-btnSeatIdx)%seats];
+  const allPos=[];
+  for(let i=0;i<seats;i++){
+    allPos.push('S'+(i+1)+'='+posMap[(seats-btnSeatIdx+i)%seats]);
+  }
+  el.innerHTML=`<span style="color:var(--green)">Hero = ${heroPos}</span> <span style="color:var(--muted);font-size:.65rem">(${allPos.join(' ')})</span>`;
+}
+
+// Carregar BTN salvo
+(function(){
+  const saved=localStorage.getItem('poker_vision_btn_seat');
+  if(saved!==null&&saved!=='-1')btnSeatIdx=parseInt(saved);
+  buildSeatMap();
+})();
+// Rebuild quando muda seats
+const _origSaveTableSeats=saveTableSeats;
+saveTableSeats=function(){_origSaveTableSeats();buildSeatMap();};
+
+// Gera mapa de posições baseado no número de seats
+function getPositionMap(seats){
+  const maps={
+    2:['BTN','BB'],
+    3:['BTN','SB','BB'],
+    4:['BTN','SB','BB','UTG'],
+    5:['BTN','SB','BB','UTG','CO'],
+    6:['BTN','SB','BB','UTG','HJ','CO'],
+    7:['BTN','SB','BB','UTG','MP','HJ','CO'],
+    8:['BTN','SB','BB','UTG','UTG+1','MP','HJ','CO'],
+    9:['BTN','SB','BB','UTG','UTG+1','LJ','MP','HJ','CO'],
+    10:['BTN','SB','BB','UTG','UTG+1','UTG+2','LJ','MP','HJ','CO'],
+  };
+  return maps[seats]||maps[8];
+}
+
+// ============ POKER ENGINE (from Poker Trainer Pro v3) ============
+const SUITS=['\u2660','\u2665','\u2666','\u2663'],SCLR={'\u2660':'b','\u2665':'r','\u2666':'r','\u2663':'b'};
+const RANKS=['A','K','Q','J','T','9','8','7','6','5','4','3','2'];
+const ALL=[];SUITS.forEach(s=>RANKS.forEach(r=>ALL.push(r+s)));
+const SUIT_MAP={'s':'\u2660','h':'\u2665','d':'\u2666','c':'\u2663'};
+
+function ggToDisplay(c){if(!c||c.length<2)return null;return c[0]+(SUIT_MAP[c[1]]||c[1])}
+function cval(r){return{A:14,K:13,Q:12,J:11,T:10,9:9,8:8,7:7,6:6,5:5,4:4,3:3,2:2}[r]}
+
+function evaluate(cards){
+  if(cards.length<5)return{rank:0,name:'Incompleta',score:0};
+  let best={rank:0,name:'High Card',score:0};
+  combos(cards,5).forEach(h=>{const r=ev5(h);if(r.score>best.score)best=r});
+  return best;
+}
+
+function ev5(cards){
+  const rks=cards.map(c=>cval(c[0])).sort((a,b)=>b-a);
+  const sts=cards.map(c=>c.slice(-1));
+  const fl=sts.every(s=>s===sts[0]);
+  let str=false,sh=0;
+  const u=[...new Set(rks)].sort((a,b)=>b-a);
+  if(u.length>=5)for(let i=0;i<=u.length-5;i++){if(u[i]-u[i+4]===4){str=true;sh=u[i];break}}
+  if(!str&&u.includes(14)&&u.includes(5)&&u.includes(4)&&u.includes(3)&&u.includes(2)){str=true;sh=5}
+  const cnt={};rks.forEach(r=>cnt[r]=(cnt[r]||0)+1);
+  const g=Object.entries(cnt).map(([k,v])=>[+k,v]).sort((a,b)=>b[1]-a[1]||b[0]-a[0]);
+  const kickers=(pairs)=>{const s=new Set(pairs);return rks.filter(r=>!s.has(r))};
+  const enc=(a=0,b=0,c=0,d=0)=>a*3375+b*225+c*15+d;
+  if(fl&&str&&sh===14)return{rank:9,name:'Royal Flush',score:900000+sh};
+  if(fl&&str)return{rank:8,name:'Straight Flush',score:800000+sh};
+  if(g[0][1]===4){const k=kickers([g[0][0]]);return{rank:7,name:'Quadra',score:700000+enc(g[0][0],k[0]||0)}}
+  if(g[0][1]===3&&g.length>1&&g[1][1]>=2)return{rank:6,name:'Full House',score:600000+enc(g[0][0],g[1][0])};
+  if(fl)return{rank:5,name:'Flush',score:500000+enc(rks[0],rks[1],rks[2],rks[3])};
+  if(str)return{rank:4,name:'Straight',score:400000+sh};
+  if(g[0][1]===3){const k=kickers([g[0][0]]);return{rank:3,name:'Trinca',score:300000+enc(g[0][0],k[0]||0,k[1]||0)}}
+  if(g[0][1]===2&&g.length>1&&g[1][1]===2){const hp=Math.max(g[0][0],g[1][0]),lp=Math.min(g[0][0],g[1][0]);const k=kickers([hp,lp]);return{rank:2,name:'Dois Pares',score:200000+enc(hp,lp,k[0]||0)}}
+  if(g[0][1]===2){const k=kickers([g[0][0]]);return{rank:1,name:'Um Par',score:100000+enc(g[0][0],k[0]||0,k[1]||0,k[2]||0)}}
+  return{rank:0,name:'High Card',score:enc(rks[0],rks[1],rks[2],rks[3])}
+}
+
+function combos(a,k){if(k===0)return[[]];if(!a.length)return[];const[f,...r]=a;return[...combos(r,k-1).map(c=>[f,...c]),...combos(r,k)]}
+
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.random()*i|0;[a[i],a[j]]=[a[j],a[i]]}}
+
+function monteCarlo(hc,vcs,bd,iter=15000){
+  const known=[...hc.filter(Boolean),...bd.filter(Boolean)];
+  vcs.forEach(vc=>vc.filter(Boolean).forEach(c=>known.push(c)));
+  const deck=ALL.filter(c=>!known.includes(c));
+  let hw=0,ties=0,tot=0;const vw=vcs.map(()=>0);
+  for(let i=0;i<iter;i++){
+    const d=[...deck];shuffle(d);let di=0;
+    const sv=vcs.map(vc=>vc.map(c=>c||d[di++]));
+    const sb=bd.map(c=>c||d[di++]);
+    const hs=evaluate([...hc,...sb]).score;
+    const vs=sv.map(vc=>evaluate([...vc,...sb]).score);
+    const mx=Math.max(...vs);
+    if(hs>mx)hw++;else if(hs===mx)ties++;else vs.forEach((v,j)=>{if(v===mx)vw[j]++});
+    tot++;
+  }
+  return{
+    hero:((hw+ties*.5)/tot*100).toFixed(1),
+    heroW:(hw/tot*100).toFixed(1),
+    tie:(ties/tot*100).toFixed(1),
+    villains:vw.map(w=>((w+ties*.5/(vcs.length+1))/tot*100).toFixed(1))
+  };
+}
+
+// ============ CARD HELPERS ============
+function parseCard(str){
+  if(!str||str.length<2)return null;
+  str=str.trim().toUpperCase();
+  const rank=str[0]==='1'&&str[1]==='0'?'T':str[0];
+  let suit=str.slice(-1);
+  const suitMap={'S':'\u2660','H':'\u2665','D':'\u2666','C':'\u2663',
+    '\u2660':'\u2660','\u2665':'\u2665','\u2666':'\u2666','\u2663':'\u2663'};
+  suit=suitMap[suit]||suit;
+  if(!cval(rank)||!SCLR[suit])return null;
+  return rank+suit;
+}
+
+function cardHTML(card){
+  if(!card)return '<span class="poker-card back">??</span>';
+  const isRed=SCLR[card.slice(-1)]==='r';
+  return `<span class="poker-card${isRed?' red':''}">${card}</span>`;
+}
+
+// ============ COST TRACKING ============
+// Preços por 1M tokens (USD) — atualizar se Anthropic mudar
+const MODEL_PRICING={
+  'claude-sonnet-4-20250514':{input:3,output:15,label:'Sonnet 4'},
+  'claude-opus-4-20250514':{input:15,output:75,label:'Opus 4'},
+  'claude-haiku-4-5-20251001':{input:0.80,output:4,label:'Haiku 4.5'}
+};
+
+let costData={totalInput:0,totalOutput:0,totalCost:0,calls:0,log:[]};
+
+// Carregar dados salvos
+(function loadCostData(){
+  try{
+    const saved=localStorage.getItem('poker_vision_costs');
+    if(saved)costData=JSON.parse(saved);
+  }catch(e){}
+})();
+
+function saveCostData(){
+  localStorage.setItem('poker_vision_costs',JSON.stringify(costData));
+}
+
+function trackUsage(model,usage){
+  const pricing=MODEL_PRICING[model]||MODEL_PRICING['claude-sonnet-4-20250514'];
+  const inTok=usage.input_tokens||0;
+  const outTok=usage.output_tokens||0;
+  // Custo: (tokens / 1M) * preço_por_1M
+  const inCost=(inTok/1e6)*pricing.input;
+  const outCost=(outTok/1e6)*pricing.output;
+  const callCost=inCost+outCost;
+
+  costData.totalInput+=inTok;
+  costData.totalOutput+=outTok;
+  costData.totalCost+=callCost;
+  costData.calls++;
+  costData.log.unshift({
+    time:new Date().toLocaleTimeString(),
+    model:pricing.label,
+    inTok,outTok,
+    cost:callCost,
+    elapsed:usage._elapsed||'?'
+  });
+  if(costData.log.length>50)costData.log.pop();
+  saveCostData();
+  updateCostUI();
+  checkCostLimit(callCost);
+}
+
+function updateCostUI(){
+  document.getElementById('costDisplay').textContent='$'+costData.totalCost.toFixed(3);
+  document.getElementById('costCount').textContent=costData.calls+' call'+(costData.calls!==1?'s':'');
+  document.getElementById('totalInput').textContent=costData.totalInput.toLocaleString();
+  document.getElementById('totalOutput').textContent=costData.totalOutput.toLocaleString();
+  document.getElementById('totalCalls').textContent=costData.calls;
+  document.getElementById('totalCost').textContent='$'+costData.totalCost.toFixed(4);
+
+  // Limite
+  const limit=parseFloat(document.getElementById('costLimit').value)||1;
+  const pct=Math.min(100,(costData.totalCost/limit*100));
+  document.getElementById('limitPct').textContent=pct.toFixed(0)+'%';
+  const fill=document.getElementById('limitFill');
+  fill.style.width=pct+'%';
+  fill.style.background=pct>=90?'var(--red)':pct>=60?'var(--gold)':'var(--green)';
+
+  // Botão pisca se acima de 80%
+  const btn=document.getElementById('costBtn');
+  btn.classList.toggle('warn',pct>=80);
+
+  // Log
+  const logEl=document.getElementById('costLog');
+  logEl.innerHTML=costData.log.map(l=>`<div class="cost-log-item">
+    <span>${l.time} <span class="model-tag">${l.model}</span></span>
+    <span>${l.elapsed}s &bull; ${l.inTok+l.outTok} tok &bull; $${l.cost.toFixed(4)}</span>
+  </div>`).join('');
+}
+
+function checkCostLimit(lastCost){
+  const limit=parseFloat(document.getElementById('costLimit').value)||1;
+  if(costData.totalCost>=limit){
+    alert(`Limite de gasto atingido! ($${costData.totalCost.toFixed(3)} / $${limit.toFixed(2)})\n\nAumente o limite ou zere a contagem para continuar.`);
+  }else if(costData.totalCost>=limit*0.8){
+    console.warn(`Poker Vision: ${((costData.totalCost/limit)*100).toFixed(0)}% do limite de gasto usado`);
+  }
+}
+
+function toggleCostPanel(){
+  document.getElementById('costPanel').classList.toggle('open');
+}
+
+// Fechar painel ao clicar fora
+document.addEventListener('click',e=>{
+  const panel=document.getElementById('costPanel');
+  const btn=document.getElementById('costBtn');
+  if(panel.classList.contains('open')&&!panel.contains(e.target)&&!btn.contains(e.target)){
+    panel.classList.remove('open');
+  }
+});
+
+function saveCostLimit(){
+  localStorage.setItem('poker_vision_cost_limit',document.getElementById('costLimit').value);
+  updateCostUI();
+}
+
+function resetCosts(){
+  if(!confirm('Zerar toda a contagem de gastos?'))return;
+  costData={totalInput:0,totalOutput:0,totalCost:0,calls:0,log:[]};
+  saveCostData();
+  updateCostUI();
+}
+
+// Carregar limite salvo
+(function(){
+  const savedLimit=localStorage.getItem('poker_vision_cost_limit');
+  if(savedLimit)document.getElementById('costLimit').value=savedLimit;
+  updateCostUI();
+})();
+
+// ============ CV LOCAL ENGINE ============
+// Template matching + OCR para análise local sem API
+const CVEngine={
+  templates:{},       // {cardCode: {data:ImageData, w, h}} ex: {Ah:{...}, Ks:{...}}
+  roiConfig:null,     // Regiões de interesse calibradas
+  enabled:false,      // Modo CV ativo
+  confidence:0.85,    // Threshold mínimo de confiança
+  learningMode:true,  // Auto-captura templates das análises AI
+  _ocrWorker:null,    // Worker Tesseract pré-inicializado (cache)
+  _ocrTextWorker:null, // Worker Tesseract para texto livre
+
+  // Carregar templates e ROI do localStorage
+  load(){
+    try{
+      const t=localStorage.getItem('poker_cv_templates');
+      if(t){
+        const saved=JSON.parse(t);
+        // Templates são salvos como base64, converter de volta
+        Object.keys(saved).forEach(k=>{
+          const img=new Image();
+          img.src=saved[k].src;
+          this.templates[k]={src:saved[k].src,w:saved[k].w,h:saved[k].h,ready:false};
+          img.onload=()=>{
+            const c=document.createElement('canvas');
+            c.width=img.width;c.height=img.height;
+            const ctx=c.getContext('2d');
+            ctx.drawImage(img,0,0);
+            this.templates[k].data=ctx.getImageData(0,0,img.width,img.height);
+            this.templates[k].ready=true;
+          };
+        });
+      }
+      const r=localStorage.getItem('poker_cv_roi');
+      if(r)this.roiConfig=JSON.parse(r);
+      const e=localStorage.getItem('poker_cv_enabled');
+      this.enabled=e==='true';
+    }catch(e){console.warn('CVEngine load error:',e)}
+    this.updateUI();
+  },
+
+  // Salvar templates no localStorage (como base64)
+  save(){
+    try{
+      const t={};
+      Object.keys(this.templates).forEach(k=>{
+        t[k]={src:this.templates[k].src,w:this.templates[k].w,h:this.templates[k].h};
+      });
+      localStorage.setItem('poker_cv_templates',JSON.stringify(t));
+      if(this.roiConfig)localStorage.setItem('poker_cv_roi',JSON.stringify(this.roiConfig));
+      localStorage.setItem('poker_cv_enabled',this.enabled?'true':'false');
+    }catch(e){console.warn('CVEngine save error:',e)}
+  },
+
+  // Atualizar contador na UI
+  updateUI(){
+    const count=Object.keys(this.templates).length;
+    const el=document.getElementById('cvTemplateCount');
+    if(el)el.textContent=`${count}/52 cartas`;
+    const pct=document.getElementById('cvLearnPct');
+    if(pct){
+      const p=(count/52*100).toFixed(0);
+      pct.textContent=`${p}%`;
+      pct.style.color=count>=52?'var(--green)':count>=26?'var(--gold)':'var(--muted)';
+    }
+    const bar=document.getElementById('cvLearnBar');
+    if(bar)bar.style.width=(count/52*100)+'%';
+    const toggle=document.getElementById('cvToggle');
+    if(toggle)toggle.checked=this.enabled;
+    const mode=document.getElementById('cvModeLabel');
+    if(mode)mode.textContent=this.enabled?'CV Local':'AI Claude';
+    if(mode)mode.style.color=this.enabled?'var(--green)':'var(--blue)';
+  },
+
+  // Auto-aprender templates a partir de uma análise AI bem-sucedida
+  learnFromAnalysis(screenshotBase64,parsedData,roiHints){
+    if(!this.learningMode)return;
+    const img=new Image();
+    img.onload=()=>{
+      const canvas=document.createElement('canvas');
+      canvas.width=img.width;canvas.height=img.height;
+      const ctx=canvas.getContext('2d');
+      ctx.drawImage(img,0,0);
+
+      // Se temos ROI configurado, usar as regiões para extrair cartas
+      if(this.roiConfig){
+        // Extrair hero cards
+        if(parsedData.hero_cards&&parsedData.hero_cards.length===2){
+          this.roiConfig.heroCards.forEach((roi,i)=>{
+            const cardCode=parsedData.hero_cards[i];
+            if(cardCode&&cardCode.length>=2&&!this.templates[cardCode]){
+              this._extractTemplate(ctx,roi,cardCode);
+            }
+          });
+        }
+        // Extrair board cards
+        if(parsedData.board&&parsedData.board.length>0){
+          parsedData.board.forEach((cardCode,i)=>{
+            if(cardCode&&cardCode.length>=2&&!this.templates[cardCode]&&this.roiConfig.board[i]){
+              this._extractTemplate(ctx,this.roiConfig.board[i],cardCode);
+            }
+          });
+        }
+      }
+      this.save();
+      this.updateUI();
+    };
+    img.src=screenshotBase64;
+  },
+
+  // Extrair template de uma região da imagem
+  _extractTemplate(ctx,roi,cardCode){
+    const x=Math.round(roi.x*ctx.canvas.width);
+    const y=Math.round(roi.y*ctx.canvas.height);
+    const w=Math.round(roi.w*ctx.canvas.width);
+    const h=Math.round(roi.h*ctx.canvas.height);
+    if(w<10||h<10)return;
+
+    // Normalizar para tamanho fixo (40x56 pixels — proporção de carta)
+    const nc=document.createElement('canvas');
+    nc.width=40;nc.height=56;
+    const nctx=nc.getContext('2d');
+    nctx.drawImage(ctx.canvas,x,y,w,h,0,0,40,56);
+
+    const src=nc.toDataURL('image/png');
+    const data=nctx.getImageData(0,0,40,56);
+    this.templates[cardCode]={src,w:40,h:56,data,ready:true};
+    console.log(`CVEngine: Template aprendido → ${cardCode} (total: ${Object.keys(this.templates).length}/52)`);
+  },
+
+  // Template matching: encontrar qual carta é
+  matchCard(imageData,w,h){
+    if(Object.keys(this.templates).length===0)return{card:null,confidence:0};
+
+    // Normalizar imagem para 40x56
+    const nc=document.createElement('canvas');
+    nc.width=40;nc.height=56;
+    const nctx=nc.getContext('2d');
+    // Criar imagem temporária do imageData
+    const tc=document.createElement('canvas');
+    tc.width=w;tc.height=h;
+    tc.getContext('2d').putImageData(imageData,0,0);
+    nctx.drawImage(tc,0,0,w,h,0,0,40,56);
+    const normalized=nctx.getImageData(0,0,40,56);
+
+    let bestMatch=null,bestScore=-1;
+
+    Object.keys(this.templates).forEach(code=>{
+      const tmpl=this.templates[code];
+      if(!tmpl.ready||!tmpl.data)return;
+      const score=this._ncc(normalized.data,tmpl.data.data);
+      if(score>bestScore){bestScore=score;bestMatch=code}
+    });
+
+    return{card:bestScore>=this.confidence?bestMatch:null,confidence:bestScore,allScores:null};
+  },
+
+  // Normalized Cross-Correlation (NCC) — comparação de imagens
+  _ncc(a,b){
+    if(a.length!==b.length)return 0;
+    let sumA=0,sumB=0,sumAB=0,sumA2=0,sumB2=0;
+    const n=a.length/4; // pixels (ignorar alpha)
+    for(let i=0;i<a.length;i+=4){
+      // Usar luminância para comparação (mais robusto)
+      const la=0.299*a[i]+0.587*a[i+1]+0.114*a[i+2];
+      const lb=0.299*b[i]+0.587*b[i+1]+0.114*b[i+2];
+      sumA+=la;sumB+=lb;sumAB+=la*lb;sumA2+=la*la;sumB2+=lb*lb;
+    }
+    const meanA=sumA/n,meanB=sumB/n;
+    let num=0,denA=0,denB=0;
+    for(let i=0;i<a.length;i+=4){
+      const la=0.299*a[i]+0.587*a[i+1]+0.114*a[i+2]-meanA;
+      const lb=0.299*b[i]+0.587*b[i+1]+0.114*b[i+2]-meanB;
+      num+=la*lb;denA+=la*la;denB+=lb*lb;
+    }
+    const den=Math.sqrt(denA*denB);
+    return den>0?num/den:0;
+  },
+
+  // OCR local para números (pot, stacks) usando canvas pixel analysis
+  // Abordagem: segmentar dígitos por cor e comparar com templates de dígitos
+  readNumber(ctx,roi){
+    const x=Math.round(roi.x*ctx.canvas.width);
+    const y=Math.round(roi.y*ctx.canvas.height);
+    const w=Math.round(roi.w*ctx.canvas.width);
+    const h=Math.round(roi.h*ctx.canvas.height);
+    if(w<5||h<5)return null;
+
+    const data=ctx.getImageData(x,y,w,h);
+    // Extrair texto por cor (números no GGPoker são brilhantes contra fundo escuro)
+    // Binarizar: pixel claro = 1, escuro = 0
+    const binary=[];
+    for(let i=0;i<data.data.length;i+=4){
+      const lum=0.299*data.data[i]+0.587*data.data[i+1]+0.114*data.data[i+2];
+      binary.push(lum>128?1:0);
+    }
+    // Contar pixels claros — se menos de 5%, provavelmente vazio
+    const bright=binary.reduce((a,b)=>a+b,0);
+    if(bright/binary.length<0.05)return null;
+
+    // Para OCR de números, vamos usar Tesseract.js quando disponível
+    return null; // Placeholder — Tesseract integrado abaixo
+  },
+
+  // Detectar dealer button: checar qual posição marcada tem o círculo amarelo "D"
+  findDealer(ctx){
+    const dealers=this.roiConfig?.dealer;
+    if(!dealers||!Array.isArray(dealers))return -1;
+    const seats=+document.getElementById('tableSeats').value||8;
+    const posMap=getPositionMap(seats);
+    let bestIdx=-1,bestScore=0;
+    const debugInfo=[];
+
+    const seatLabels=(SEAT_LABELS[seats]||SEAT_LABELS[8]);
+
+    dealers.forEach((roi,i)=>{
+      if(!roi)return;
+      const x=Math.round(roi.x*ctx.canvas.width);
+      const y=Math.round(roi.y*ctx.canvas.height);
+      const w=Math.round(roi.w*ctx.canvas.width);
+      const h=Math.round(roi.h*ctx.canvas.height);
+      if(w<3||h<3)return;
+      const data=ctx.getImageData(x,y,w,h);
+      const d=data.data;
+      let yellowCount=0,whiteCount=0,totalPx=d.length/4;
+
+      for(let p=0;p<d.length;p+=4){
+        const r=d[p],g=d[p+1],b=d[p+2];
+        if(r>160&&g>120&&b<130&&(r-b)>50)yellowCount++;
+        if(r>200&&g>200&&b>180)whiteCount++;
+      }
+      const yellowPct=yellowCount/totalPx;
+      const whitePct=whiteCount/totalPx;
+      const score=yellowPct+whitePct*0.3;
+
+      debugInfo.push({seat:i+1,location:seatLabels[i]||'?',yellowPct:(yellowPct*100).toFixed(1),
+        whitePct:(whitePct*100).toFixed(1),score:(score*100).toFixed(1),
+        dims:`${w}x${h}`,totalPx});
+
+      if(score>0.05&&score>bestScore){
+        bestScore=score;
+        bestIdx=i;
+      }
+    });
+
+    // Se D encontrado no seat físico X → esse seat = BTN
+    // Hero é seat 0 → posição do Hero = posMap[(seats - bestIdx) % seats]
+    let heroDeducedPos=null;
+    if(bestIdx>=0){
+      heroDeducedPos=posMap[(seats-bestIdx)%seats];
+    }
+
+    console.log('🎯 Dealer Detection Debug:');
+    console.table(debugInfo);
+    if(bestIdx>=0){
+      console.log(`✅ D found at Seat ${bestIdx+1} (${seatLabels[bestIdx]}) → that player = BTN → Hero = ${heroDeducedPos}`);
+    }else{
+      console.log('❌ No dealer button detected in any ROI');
+    }
+
+    this._lastDealerDebug=debugInfo;
+    this._lastDealerIdx=bestIdx;
+    this._lastHeroPos=heroDeducedPos;
+
+    return bestIdx;
+  },
+
+  // Análise completa local usando templates + ROIs + OCR
+  async analyzeLocal(screenshotBase64){
+    if(!this.roiConfig)return{success:false,reason:'ROI não calibrado'};
+    const templateCount=Object.keys(this.templates).filter(k=>this.templates[k].ready).length;
+    if(templateCount<10)return{success:false,reason:`Poucos templates (${templateCount}/52). Continue usando AI para aprender.`};
+
+    const t0=performance.now();
+    const img=await this._loadImage(screenshotBase64);
+    const canvas=document.createElement('canvas');
+    canvas.width=img.width;canvas.height=img.height;
+    const ctx=canvas.getContext('2d');
+    ctx.drawImage(img,0,0);
+
+    const seats=+document.getElementById('tableSeats').value||8;
+    const posMap=getPositionMap(seats);
+    const heroNick=document.getElementById('heroNick').value.trim()||'Hero';
+
+    const result={hero_cards:[],board:[],pot:0,hero_stack:0,villain_stacks:[],villain_cards:[],
+      villain_names:[],villain_positions:[],hero_position:'',street:'preflop',
+      blinds:'',num_players_active:0,last_action:'',tournament:true,notes:'CV Local'};
+
+    // ── 1. Detectar hero cards via template matching ──
+    let heroConfidence=[];
+    (this.roiConfig.heroCards||[]).forEach(roi=>{
+      if(!roi){result.hero_cards.push('');heroConfidence.push(0);return}
+      const data=ctx.getImageData(
+        Math.round(roi.x*canvas.width),Math.round(roi.y*canvas.height),
+        Math.round(roi.w*canvas.width),Math.round(roi.h*canvas.height)
+      );
+      const match=this.matchCard(data,Math.round(roi.w*canvas.width),Math.round(roi.h*canvas.height));
+      result.hero_cards.push(match.card||'');
+      heroConfidence.push(match.confidence);
+    });
+
+    // ── 2. Detectar board cards ──
+    let boardConfidence=[];
+    (this.roiConfig.board||[]).forEach(roi=>{
+      if(!roi){boardConfidence.push(0);return}
+      const data=ctx.getImageData(
+        Math.round(roi.x*canvas.width),Math.round(roi.y*canvas.height),
+        Math.round(roi.w*canvas.width),Math.round(roi.h*canvas.height)
+      );
+      const match=this.matchCard(data,Math.round(roi.w*canvas.width),Math.round(roi.h*canvas.height));
+      if(match.card&&match.confidence>0.3)result.board.push(match.card);
+      boardConfidence.push(match.confidence);
+    });
+
+    // ── 3. Determinar street ──
+    result.street=result.board.length===0?'preflop':result.board.length===3?'flop':
+      result.board.length===4?'turn':'river';
+
+    // ── 4-7. OCR PARALELO: pot, stacks, blinds, nomes, bets, ações — tudo ao mesmo tempo ──
+    const seatNamesROI=this.roiConfig.seatNames||[];
+    const seatStacksROI=this.roiConfig.seatStacks||[];
+    const seatCardsROIs=this.roiConfig.seatCards||[];
+    const seatBetsROI=this.roiConfig.seatBets||[];
+    const heroStackROI=this.roiConfig.heroStack||(seatStacksROI)[0];
+    const hasTess=typeof Tesseract!=='undefined';
+
+    // Primeiro: detectar seats ativos (síncrono, rápido — pixel analysis)
+    const activeSeatIdxs=[];
+    for(let i=1;i<seats;i++){
+      let isActive=true;
+      if(seatCardsROIs[i])isActive=this._detectSeatActive(ctx,seatCardsROIs[i]);
+      if(isActive)activeSeatIdxs.push(i);
+    }
+
+    // Preparar todas as tarefas OCR como promises
+    const ocrJobs={}; // {key: Promise<string>}
+    if(hasTess){
+      // Pot (numérico)
+      if(this.roiConfig.pot)ocrJobs.pot=this._ocrRegion(ctx,this.roiConfig.pot).catch(()=>null);
+      // Hero stack (numérico)
+      if(heroStackROI)ocrJobs.heroStack=this._ocrRegion(ctx,heroStackROI).catch(()=>null);
+      // Blinds (texto)
+      if(this.roiConfig.blinds)ocrJobs.blinds=this._ocrTextRegion(ctx,this.roiConfig.blinds).catch(()=>null);
+      // Last Action (texto — ex: "Raise", "Call", "All-in")
+      if(this.roiConfig.lastAction)ocrJobs.lastAction=this._ocrTextRegion(ctx,this.roiConfig.lastAction).catch(()=>null);
+      // Bet to Call (numérico — valor que hero precisa pagar)
+      if(this.roiConfig.betToCall)ocrJobs.betToCall=this._ocrRegion(ctx,this.roiConfig.betToCall).catch(()=>null);
+      // Total Bet no centro (numérico)
+      if(this.roiConfig.totalBet)ocrJobs.totalBet=this._ocrRegion(ctx,this.roiConfig.totalBet).catch(()=>null);
+      // Stacks de cada villain ativo (numérico)
+      activeSeatIdxs.forEach(i=>{
+        if(seatStacksROI[i])ocrJobs['stack_'+i]=this._ocrRegion(ctx,seatStacksROI[i]).catch(()=>null);
+      });
+      // Nomes de cada villain ativo (texto)
+      activeSeatIdxs.forEach(i=>{
+        if(seatNamesROI[i])ocrJobs['name_'+i]=this._ocrTextRegion(ctx,seatNamesROI[i]).catch(()=>null);
+      });
+      // Bet chips de cada seat ativo (numérico — chips na frente do jogador)
+      activeSeatIdxs.forEach(i=>{
+        if(seatBetsROI[i])ocrJobs['bet_'+i]=this._ocrRegion(ctx,seatBetsROI[i]).catch(()=>null);
+      });
+    }
+
+    // Executar OCR: workers processam em sequência por tipo, mas numérico e texto rodam em paralelo
+    const jobKeys=Object.keys(ocrJobs);
+    const jobResults=await Promise.all(jobKeys.map(k=>ocrJobs[k]));
+    const ocrData={};
+    jobKeys.forEach((k,i)=>ocrData[k]=jobResults[i]);
+
+    // Aplicar resultados fixos
+    if(ocrData.pot)result.pot=this._parseNumber(ocrData.pot);
+    if(ocrData.heroStack)result.hero_stack=this._parseNumber(ocrData.heroStack);
+    if(ocrData.blinds)result.blinds=ocrData.blinds;
+
+    // ── Ações e Bets ──
+    if(ocrData.lastAction){
+      const raw=ocrData.lastAction.toLowerCase().trim();
+      // Normalizar ações comuns do GGPoker
+      if(/all.?in/i.test(raw))result.last_action='All-in';
+      else if(/raise|rais/i.test(raw)){
+        const amt=ocrData.betToCall?this._parseNumber(ocrData.betToCall):0;
+        result.last_action=amt>0?'Raise '+amt.toLocaleString():'Raise';
+      }
+      else if(/call/i.test(raw)){
+        const amt=ocrData.betToCall?this._parseNumber(ocrData.betToCall):0;
+        result.last_action=amt>0?'Call '+amt.toLocaleString():'Call';
+      }
+      else if(/bet/i.test(raw)){
+        const amt=ocrData.betToCall?this._parseNumber(ocrData.betToCall):0;
+        result.last_action=amt>0?'Bet '+amt.toLocaleString():'Bet';
+      }
+      else if(/check|chk/i.test(raw))result.last_action='Check';
+      else if(/fold/i.test(raw))result.last_action='Fold';
+      else result.last_action=ocrData.lastAction.trim();
+    }
+    // Bet to call separado (para pot odds)
+    if(ocrData.betToCall){
+      result.bet_to_call=this._parseNumber(ocrData.betToCall);
+    }
+    // Total bet no centro
+    if(ocrData.totalBet){
+      result.total_bet=this._parseNumber(ocrData.totalBet);
+    }
+
+    // Montar villains a partir dos seats ativos
+    const activeSeats=activeSeatIdxs.map(i=>{
+      let name='Player'+(i+1);
+      const rawName=ocrData['name_'+i];
+      if(rawName&&rawName.length>1)name=rawName.replace(/[\n\r]/g,' ').trim();
+      let stack=0;
+      const rawStack=ocrData['stack_'+i];
+      if(rawStack)stack=this._parseNumber(rawStack);
+      // Bet do jogador (chips na frente dele)
+      let bet=0;
+      const rawBet=ocrData['bet_'+i];
+      if(rawBet)bet=this._parseNumber(rawBet);
+      return{idx:i,name,stack,bet};
+    });
+
+    // ── Villain Cards via template matching (showdown/all-in) ──
+    const villainCardResults=[];
+    activeSeatIdxs.forEach((seatIdx,arrIdx)=>{
+      const cardsROI=seatCardsROIs[seatIdx];
+      if(!cardsROI){villainCardResults[arrIdx]=['',''];return}
+      // Tentar detectar 2 cartas na região do seat (dividir ROI ao meio)
+      const rx=Math.round(cardsROI.x*canvas.width);
+      const ry=Math.round(cardsROI.y*canvas.height);
+      const rw=Math.round(cardsROI.w*canvas.width);
+      const rh=Math.round(cardsROI.h*canvas.height);
+      if(rw<20||rh<10){villainCardResults[arrIdx]=['',''];return}
+      const halfW=Math.floor(rw/2);
+      // Carta 1 (metade esquerda)
+      const d1=ctx.getImageData(rx,ry,halfW,rh);
+      const m1=this.matchCard(d1,halfW,rh);
+      // Carta 2 (metade direita)
+      const d2=ctx.getImageData(rx+halfW,ry,rw-halfW,rh);
+      const m2=this.matchCard(d2,rw-halfW,rh);
+      const c1=(m1.confidence>0.45)?m1.card:'';
+      const c2=(m2.confidence>0.45)?m2.card:'';
+      villainCardResults[arrIdx]=[c1,c2];
+    });
+
+    // ── 8. Posições via BTN seat selector + ordenar por posição (BTN→SB→BB→UTG...) ──
+    if(btnSeatIdx>=0){
+      result.hero_position=posMap[(seats-btnSeatIdx)%seats];
+      activeSeats.forEach(s=>{
+        s.position=posMap[(seats-btnSeatIdx+s.idx)%seats];
+        s.posOrder=posMap.indexOf(s.position);
+      });
+      activeSeats.sort((a,b)=>a.posOrder-b.posOrder);
+      result.villain_positions=activeSeats.map(s=>s.position);
+    }else{
+      result.hero_position='?';
+    }
+
+    result.villain_names=activeSeats.map(s=>s.name);
+    result.villain_stacks=activeSeats.map(s=>s.stack);
+    result.villain_bets=activeSeats.map(s=>s.bet);
+    // Cartas dos vilões — mapear pela ordem final (após sort)
+    result.villain_cards=activeSeats.map(s=>{
+      const origArrIdx=activeSeatIdxs.indexOf(s.idx);
+      return villainCardResults[origArrIdx]||['',''];
+    });
+    result.num_players_active=activeSeats.length+1;
+
+    // ── Deduzir last_action a partir das bets se OCR de ação falhou ──
+    if(!result.last_action&&result.villain_bets){
+      const maxBet=Math.max(0,...result.villain_bets);
+      if(maxBet>0){
+        result.last_action='Bet '+maxBet.toLocaleString();
+        if(!result.bet_to_call)result.bet_to_call=maxBet;
+      }
+    }
+
+    // ── 9. Confiança média ──
+    const avgConf=[...heroConfidence,...boardConfidence].filter(c=>c>0);
+    const meanConf=avgConf.length>0?avgConf.reduce((a,b)=>a+b)/avgConf.length:0;
+
+    const elapsed=((performance.now()-t0)/1000).toFixed(2);
+    const ocrParts=[];
+    if(result.pot>0)ocrParts.push('Pot:'+result.pot);
+    if(result.hero_stack>0)ocrParts.push('Stack:'+result.hero_stack);
+    if(result.blinds)ocrParts.push('Blinds:'+result.blinds);
+    ocrParts.push('Villains:'+activeSeats.length);
+    result.notes=`CV Local (${elapsed}s) | Conf: ${(meanConf*100).toFixed(0)}% | T: ${templateCount}/52 | ${ocrParts.join(' ')}`;
+
+    console.log('🔍 CV Local result:', JSON.stringify(result,null,2));
+
+    return{
+      success:meanConf>=this.confidence&&result.hero_cards.filter(Boolean).length===2,
+      data:result,
+      confidence:meanConf,
+      elapsed,
+      fallbackRecommended:meanConf<this.confidence
+    };
+  },
+
+  // OCR de uma região usando Tesseract.js
+  async _ocrRegion(ctx,roi){
+    if(typeof Tesseract==='undefined')return null;
+    const x=Math.round(roi.x*ctx.canvas.width);
+    const y=Math.round(roi.y*ctx.canvas.height);
+    const w=Math.round(roi.w*ctx.canvas.width);
+    const h=Math.round(roi.h*ctx.canvas.height);
+    const c=document.createElement('canvas');
+    c.width=w;c.height=h;
+    const cctx=c.getContext('2d');
+    cctx.drawImage(ctx.canvas,x,y,w,h,0,0,w,h);
+    // Pré-processar: aumentar contraste + inverter se fundo escuro
+    const data=cctx.getImageData(0,0,w,h);
+    const d=data.data;
+    let avgLum=0;
+    for(let i=0;i<d.length;i+=4)avgLum+=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+    avgLum/=(d.length/4);
+    // Se fundo escuro, inverter para melhor OCR
+    if(avgLum<128){
+      for(let i=0;i<d.length;i+=4){d[i]=255-d[i];d[i+1]=255-d[i+1];d[i+2]=255-d[i+2]}
+    }
+    cctx.putImageData(data,0,0);
+    // Usar worker cacheado para velocidade (evita re-criar worker a cada chamada)
+    if(!this._ocrWorker&&typeof Tesseract!=='undefined'){
+      this._ocrWorker=await Tesseract.createWorker('eng');
+      await this._ocrWorker.setParameters({tessedit_char_whitelist:'0123456789,.'});
+    }
+    if(!this._ocrWorker)return null;
+    const result=await this._ocrWorker.recognize(c);
+    return result.data?.text?.trim()||null;
+  },
+
+  // OCR de texto livre (nomes de jogadores, blinds)
+  async _ocrTextRegion(ctx,roi){
+    if(typeof Tesseract==='undefined')return null;
+    const x=Math.round(roi.x*ctx.canvas.width);
+    const y=Math.round(roi.y*ctx.canvas.height);
+    const w=Math.round(roi.w*ctx.canvas.width);
+    const h=Math.round(roi.h*ctx.canvas.height);
+    if(w<2||h<2)return null;
+    const c=document.createElement('canvas');
+    c.width=w*2;c.height=h*2; // scale up 2x para melhor OCR
+    const cctx=c.getContext('2d');
+    cctx.imageSmoothingEnabled=false;
+    cctx.drawImage(ctx.canvas,x,y,w,h,0,0,w*2,h*2);
+    // Pré-processar: inverter se fundo escuro
+    const data=cctx.getImageData(0,0,w*2,h*2);
+    const d=data.data;
+    let avgLum=0;
+    for(let i=0;i<d.length;i+=4)avgLum+=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+    avgLum/=(d.length/4);
+    if(avgLum<128){
+      for(let i=0;i<d.length;i+=4){d[i]=255-d[i];d[i+1]=255-d[i+1];d[i+2]=255-d[i+2]}
+    }
+    cctx.putImageData(data,0,0);
+    // Worker para texto livre (sem whitelist restritiva)
+    if(!this._ocrTextWorker&&typeof Tesseract!=='undefined'){
+      this._ocrTextWorker=await Tesseract.createWorker('eng');
+    }
+    if(!this._ocrTextWorker)return null;
+    const result=await this._ocrTextWorker.recognize(c);
+    return result.data?.text?.trim()||null;
+  },
+
+  // Detectar se um seat tem cartas visíveis (não está vazio/folded/sitting out)
+  _detectSeatActive(ctx,roi){
+    if(!roi)return false;
+    const x=Math.round(roi.x*ctx.canvas.width);
+    const y=Math.round(roi.y*ctx.canvas.height);
+    const w=Math.round(roi.w*ctx.canvas.width);
+    const h=Math.round(roi.h*ctx.canvas.height);
+    if(w<2||h<2)return false;
+    const data=ctx.getImageData(x,y,w,h);
+    const d=data.data;
+    const total=d.length/4;
+    let bright=0,colorful=0;
+    for(let i=0;i<d.length;i+=4){
+      const r=d[i],g=d[i+1],b=d[i+2];
+      const lum=0.299*r+0.587*g+0.114*b;
+      if(lum>100)bright++;
+      // Saturação: cartas têm cores vivas (vermelho, preto sobre branco)
+      const max=Math.max(r,g,b),min=Math.min(r,g,b);
+      if(max-min>40||lum>180)colorful++;
+    }
+    // Um seat com cartas (face-down ou visible) tem bastante variação visual
+    const brightPct=bright/total;
+    const colorPct=colorful/total;
+    // Se >25% dos pixels são brilhantes e >20% têm cor → ativo
+    return brightPct>0.25&&colorPct>0.20;
+  },
+
+  // Parsear valor numérico de texto OCR (ex: "1,234" → 1234, "$5.50" → 5.50)
+  _parseNumber(text){
+    if(!text)return 0;
+    // Remover tudo exceto dígitos, ponto e vírgula
+    let clean=text.replace(/[^0-9.,]/g,'');
+    // Se tem ponto e vírgula, tratar vírgula como separador de milhar
+    if(clean.includes('.')&&clean.includes(','))clean=clean.replace(/,/g,'');
+    else if(clean.includes(',')&&!clean.includes('.'))clean=clean.replace(/,/g,'');
+    return parseFloat(clean)||0;
+  },
+
+  _loadImage(src){
+    return new Promise((resolve,reject)=>{
+      const img=new Image();img.onload=()=>resolve(img);img.onerror=reject;img.src=src;
+    });
+  },
+
+  // Limpar todos os templates
+  clearTemplates(){
+    if(!confirm('Limpar todos os templates de cartas aprendidos?'))return;
+    this.templates={};
+    this.save();
+    this.updateUI();
+  },
+
+  // Limpar ROI
+  clearROI(){
+    this.roiConfig=null;
+    localStorage.removeItem('poker_cv_roi');
+    this.updateUI();
+  }
+};
+
+// ============ ROI CALIBRATION MODE (free-select + drag) ============
+let roiCalibMode=false;
+let roiActiveType=null; // qual tipo está selecionado para marcar
+let roiDragStart=null;
+let roiIsDragging=false;
+let roiLiveRect=null;
+let roiTempConfig={heroCards:[null,null],board:[null,null,null,null,null],pot:null,dealer:[],heroStack:null,blinds:null,seatNames:[],seatStacks:[],seatCards:[]};
+// Rects visuais por tipo (para poder re-marcar)
+let roiRects={};
+
+const ROI_TYPES={
+  hero1:{label:'Hero 1',color:'#4ade80',key:'heroCards',idx:0},
+  hero2:{label:'Hero 2',color:'#4ade80',key:'heroCards',idx:1},
+  board1:{label:'Board 1',color:'#fbbf24',key:'board',idx:0},
+  board2:{label:'Board 2',color:'#fbbf24',key:'board',idx:1},
+  board3:{label:'Board 3',color:'#fbbf24',key:'board',idx:2},
+  board4:{label:'Board 4',color:'#fbbf24',key:'board',idx:3},
+  board5:{label:'Board 5',color:'#fbbf24',key:'board',idx:4},
+  pot:{label:'Pot',color:'#3b82f6',key:'pot',idx:0},
+  heroStack:{label:'Hero Stack',color:'#22d3ee',key:'heroStack',idx:0},
+  blinds:{label:'Blinds',color:'#a78bfa',key:'blinds',idx:0},
+  // Ações — áreas onde GGPoker mostra bets/calls dos jogadores
+  lastAction:{label:'Última Ação (texto)',color:'#f43f5e',key:'lastAction',idx:0},
+  betToCall:{label:'Bet to Call ($)',color:'#f43f5e',key:'betToCall',idx:0},
+  heroAction:{label:'Hero Ação (botões)',color:'#fb923c',key:'heroAction',idx:0},
+  totalBet:{label:'Total Bet (centro)',color:'#f43f5e',key:'totalBet',idx:0},
+};
+// Seat ROIs são adicionados dinamicamente (nomes, stacks, área de cartas)
+function buildSeatROIs(){
+  const seats=+document.getElementById('tableSeats').value||8;
+  const labels=SEAT_LABELS[seats]||SEAT_LABELS[8];
+  // Remover antigos
+  Object.keys(ROI_TYPES).forEach(k=>{if(k.startsWith('seatName')||k.startsWith('seatStack')||k.startsWith('seatCards')||k.startsWith('seatBet'))delete ROI_TYPES[k]});
+  labels.forEach((lbl,i)=>{
+    const sLabel=i===0?'Hero':('S'+(i+1)+lbl);
+    ROI_TYPES['seatName'+i]={label:'Nome:'+sLabel,color:'#f97316',key:'seatNames',idx:i};
+    ROI_TYPES['seatStack'+i]={label:'Stack:'+sLabel,color:'#06b6d4',key:'seatStacks',idx:i};
+    ROI_TYPES['seatCards'+i]={label:'Cards:'+sLabel,color:'#ec4899',key:'seatCards',idx:i};
+    ROI_TYPES['seatBet'+i]={label:'Bet:'+sLabel,color:'#ef4444',key:'seatBets',idx:i};
+  });
+  // Gerar botões HTML na área de calibração
+  const container=document.getElementById('seatROIBtns');
+  if(!container)return;
+  container.innerHTML=labels.map((lbl,i)=>{
+    const sLabel=i===0?'Hero':('S'+(i+1));
+    return `<span style="display:inline-flex;gap:2px;margin-right:4px">
+      <button class="btn btn-sec roi-btn" data-roi="seatName${i}" onclick="selectROI('seatName${i}')" style="font-size:.6rem;padding:2px 4px;border:2px solid transparent">N:${sLabel}</button>
+      <button class="btn btn-sec roi-btn" data-roi="seatStack${i}" onclick="selectROI('seatStack${i}')" style="font-size:.6rem;padding:2px 4px;border:2px solid transparent">$:${sLabel}</button>
+      <button class="btn btn-sec roi-btn" data-roi="seatCards${i}" onclick="selectROI('seatCards${i}')" style="font-size:.6rem;padding:2px 4px;border:2px solid transparent">C:${sLabel}</button>
+      <button class="btn btn-sec roi-btn" data-roi="seatBet${i}" onclick="selectROI('seatBet${i}')" style="font-size:.6rem;padding:2px 4px;border:2px solid transparent;color:#ef4444">B:${sLabel}</button>
+    </span>`;
+  }).join('');
+}
+// Labels físicas dos seats (ANTI-HORÁRIO a partir do Hero, como GGPoker)
+const SEAT_LABELS={
+  8:['Hero(↓)','↙','←','↖','↑','↗','→','↘'],
+  9:['Hero(↓)','↙','←','↖','↑↖','↑','↗','→','↘'],
+  6:['Hero(↓)','↙','↖','↑','↗','↘'],
+  5:['Hero(↓)','←','↖','↗','→'],
+  4:['Hero(↓)','←','↑','→'],
+  3:['Hero(↓)','↖','↗'],
+  2:['Hero(↓)','↑'],
+  7:['Hero(↓)','↙','←','↖','↗','→','↘'],
+  10:['Hero(↓)','↓←','↙','←','↖','↑←','↑→','↗','→','↘']
+};
+
+// Dealer seats são adicionados dinamicamente baseado no número de seats
+function buildDealerROIs(){
+  const seats=+document.getElementById('tableSeats').value||8;
+  const labels=SEAT_LABELS[seats]||SEAT_LABELS[8];
+  // Remover dealers antigos do ROI_TYPES
+  Object.keys(ROI_TYPES).forEach(k=>{if(k.startsWith('dealer'))delete ROI_TYPES[k]});
+  // Adicionar um por seat (index = seat físico, NÃO posição de poker)
+  labels.forEach((lbl,i)=>{
+    ROI_TYPES['dealer'+i]={label:'D:S'+(i+1)+lbl,color:'#f472b6',key:'dealer',idx:i};
+  });
+  // Gerar botões HTML
+  const container=document.getElementById('dealerBtns');
+  if(!container)return;
+  container.innerHTML=labels.map((lbl,i)=>
+    `<button class="btn btn-sec roi-btn" data-roi="dealer${i}" onclick="selectROI('dealer${i}')" style="font-size:.65rem;padding:2px 6px;border:2px solid transparent">D:S${i+1}${lbl}</button>`
+  ).join('');
+}
+// Atualizar dealers e seats quando muda número de seats
+const origSaveSeats=saveTableSeats;
+saveTableSeats=function(){origSaveSeats();buildDealerROIs();buildSeatROIs()};
+buildDealerROIs();
+buildSeatROIs();
+
+function captureROIFrame(){
+  const video=document.getElementById('captureVideo');
+  const vw=video.videoWidth,vh=video.videoHeight;
+  if(!vw||!vh)return null;
+  const cx=Math.round(cropRect.x/100*vw);
+  const cy=Math.round(cropRect.y/100*vh);
+  const cw=Math.round(cropRect.w/100*vw);
+  const ch=Math.round(cropRect.h/100*vh);
+  const canvas=document.createElement('canvas');
+  canvas.width=cw;canvas.height=ch;
+  canvas.getContext('2d').drawImage(video,cx,cy,cw,ch,0,0,cw,ch);
+  return canvas.toDataURL('image/png');
+}
+
+function startROICalibration(){
+  if(!screenStream){alert('Inicie o stream primeiro!');return}
+  const frame=captureROIFrame();
+  if(!frame){alert('Aguarde o stream carregar');return}
+
+  document.getElementById('roiCalibImg').src=frame;
+  document.getElementById('roiCalibArea').style.display='block';
+  roiCalibMode=true;
+  roiActiveType=null;
+  roiRects={};
+
+  // Carregar config existente se houver
+  if(CVEngine.roiConfig){
+    roiTempConfig=JSON.parse(JSON.stringify(CVEngine.roiConfig));
+    // Garantir estrutura
+    if(!roiTempConfig.heroCards)roiTempConfig.heroCards=[null,null];
+    if(!roiTempConfig.board)roiTempConfig.board=[null,null,null,null,null];
+  }else{
+    roiTempConfig={heroCards:[null,null],board:[null,null,null,null,null],pot:null,dealer:[],heroStack:null,blinds:null,seatNames:[],seatStacks:[],seatCards:[]};
+  }
+  if(!Array.isArray(roiTempConfig.dealer))roiTempConfig.dealer=[];
+  if(!Array.isArray(roiTempConfig.seatNames))roiTempConfig.seatNames=[];
+  if(!Array.isArray(roiTempConfig.seatStacks))roiTempConfig.seatStacks=[];
+  if(!Array.isArray(roiTempConfig.seatCards))roiTempConfig.seatCards=[];
+
+  // Rebuild dealer e seat buttons para o número atual de seats
+  buildDealerROIs();
+  buildSeatROIs();
+
+  document.getElementById('roiOverlay').innerHTML='';
+  updateROIButtons();
+  // Redesenhar rects já calibrados
+  redrawExistingROIs();
+  document.getElementById('roiActiveLabel').textContent='Selecione um botão acima e arraste na imagem';
+}
+
+function recaptureROIFrame(){
+  const frame=captureROIFrame();
+  if(frame){
+    document.getElementById('roiCalibImg').src=frame;
+    // Manter os rects visuais
+  }
+}
+
+function selectROI(type){
+  roiActiveType=type;
+  updateROIButtons();
+  const info=ROI_TYPES[type];
+  const hasValue=getROIValue(type)!==null;
+  document.getElementById('roiActiveLabel').innerHTML=
+    `<span style="color:${info.color}">&#9632;</span> Marcando: <b>${info.label}</b> — arraste um ret&acirc;ngulo na imagem`;
+  // Mostrar botão Apagar se já tem marcação
+  const delBtn=document.getElementById('roiDeleteBtn');
+  if(delBtn)delBtn.style.display=hasValue?'':'none';
+}
+
+function deleteSelectedROI(){
+  if(!roiActiveType)return;
+  const info=ROI_TYPES[roiActiveType];
+  if(!info)return;
+  // Limpar valor
+  setROIValue(roiActiveType,null);
+  // Remover retângulo visual
+  if(roiRects[roiActiveType]){
+    roiRects[roiActiveType].remove();
+    delete roiRects[roiActiveType];
+  }
+  updateROIButtons();
+  document.getElementById('roiDeleteBtn').style.display='none';
+  document.getElementById('roiActiveLabel').innerHTML=
+    `<span style="color:var(--red)">&#128465; ${info.label} apagado.</span> Arraste para remarcar ou selecione outro`;
+}
+
+function updateROIButtons(){
+  document.querySelectorAll('.roi-btn').forEach(btn=>{
+    const type=btn.dataset.roi;
+    const info=ROI_TYPES[type];
+    const isActive=type===roiActiveType;
+    const hasROI=getROIValue(type)!==null;
+    btn.style.borderColor=isActive?info.color:'transparent';
+    btn.style.background=isActive?info.color+'33':hasROI?info.color+'22':'#334155';
+    btn.style.color=hasROI?info.color:'var(--txt)';
+    // Checkmark se já calibrado
+    if(hasROI&&!isActive){
+      btn.innerHTML=btn.textContent.replace(' ✓','')+'<span style="color:'+info.color+'"> ✓</span>';
+    }
+  });
+}
+
+function getROIValue(type){
+  const info=ROI_TYPES[type];
+  if(!info)return null;
+  const arrKeys=['heroCards','board','dealer','seatNames','seatStacks','seatCards','seatBets'];
+  if(arrKeys.includes(info.key))return(roiTempConfig[info.key]||[])[info.idx]||null;
+  return roiTempConfig[info.key];
+}
+
+function setROIValue(type,roi){
+  const info=ROI_TYPES[type];
+  if(!info)return;
+  const arrKeys=['heroCards','board','dealer','seatNames','seatStacks','seatCards','seatBets'];
+  if(arrKeys.includes(info.key)){
+    if(!Array.isArray(roiTempConfig[info.key]))roiTempConfig[info.key]=[];
+    roiTempConfig[info.key][info.idx]=roi;
+  }else{
+    roiTempConfig[info.key]=roi;
+  }
+}
+
+function redrawExistingROIs(){
+  const overlay=document.getElementById('roiOverlay');
+  Object.keys(ROI_TYPES).forEach(type=>{
+    const roi=getROIValue(type);
+    if(!roi)return;
+    const info=ROI_TYPES[type];
+    drawROIRect(overlay,roi,type,info);
+  });
+}
+
+function drawROIRect(overlay,roi,type,info){
+  // Remover rect anterior desse tipo
+  if(roiRects[type])roiRects[type].remove();
+  const div=document.createElement('div');
+  div.style.cssText=`position:absolute;left:${roi.x*100}%;top:${roi.y*100}%;width:${roi.w*100}%;height:${roi.h*100}%;border:2px solid ${info.color};background:${info.color}22;pointer-events:none;z-index:6`;
+  div.innerHTML=`<span style="font-size:.55rem;color:${info.color};background:rgba(0,0,0,.8);padding:1px 4px;position:absolute;top:-14px;left:0;white-space:nowrap;border-radius:2px">${info.label}</span>`;
+  overlay.appendChild(div);
+  roiRects[type]=div;
+}
+
+// Mouse events para drag
+document.addEventListener('mousedown',e=>{
+  if(!roiCalibMode||!roiActiveType)return;
+  const overlay=document.getElementById('roiOverlay');
+  if(!overlay||(!overlay.contains(e.target)&&e.target!==overlay))return;
+  e.preventDefault();
+  const rect=overlay.getBoundingClientRect();
+  roiDragStart={x:(e.clientX-rect.left)/rect.width,y:(e.clientY-rect.top)/rect.height};
+  roiIsDragging=true;
+  const info=ROI_TYPES[roiActiveType];
+  roiLiveRect=document.createElement('div');
+  roiLiveRect.style.cssText=`position:absolute;border:2px solid ${info.color};background:${info.color}22;pointer-events:none;z-index:7;left:${roiDragStart.x*100}%;top:${roiDragStart.y*100}%;width:0;height:0`;
+  overlay.appendChild(roiLiveRect);
+});
+
+document.addEventListener('mousemove',e=>{
+  if(!roiIsDragging||!roiDragStart||!roiLiveRect)return;
+  const overlay=document.getElementById('roiOverlay');
+  if(!overlay)return;
+  const rect=overlay.getBoundingClientRect();
+  const cur={x:Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width)),y:Math.max(0,Math.min(1,(e.clientY-rect.top)/rect.height))};
+  roiLiveRect.style.left=(Math.min(roiDragStart.x,cur.x)*100)+'%';
+  roiLiveRect.style.top=(Math.min(roiDragStart.y,cur.y)*100)+'%';
+  roiLiveRect.style.width=(Math.abs(cur.x-roiDragStart.x)*100)+'%';
+  roiLiveRect.style.height=(Math.abs(cur.y-roiDragStart.y)*100)+'%';
+});
+
+document.addEventListener('mouseup',e=>{
+  if(!roiIsDragging||!roiDragStart||!roiActiveType)return;
+  roiIsDragging=false;
+  const overlay=document.getElementById('roiOverlay');
+  if(!overlay){roiDragStart=null;return}
+  const rect=overlay.getBoundingClientRect();
+  const end={x:Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width)),y:Math.max(0,Math.min(1,(e.clientY-rect.top)/rect.height))};
+  const roi={
+    x:Math.min(roiDragStart.x,end.x),y:Math.min(roiDragStart.y,end.y),
+    w:Math.abs(end.x-roiDragStart.x),h:Math.abs(end.y-roiDragStart.y)
+  };
+
+  // Remover rect de arraste temporário
+  if(roiLiveRect){roiLiveRect.remove();roiLiveRect=null}
+  roiDragStart=null;
+
+  // Ignorar arraste muito pequeno
+  if(roi.w<0.005||roi.h<0.005)return;
+
+  // Salvar e desenhar rect definitivo
+  const info=ROI_TYPES[roiActiveType];
+  setROIValue(roiActiveType,roi);
+  drawROIRect(overlay,roi,roiActiveType,info);
+  updateROIButtons();
+
+  // Feedback
+  document.getElementById('roiActiveLabel').innerHTML=
+    `<span style="color:${info.color}">✓ ${info.label} marcado!</span> — selecione outro bot&atilde;o ou clique Salvar`;
+});
+
+function finishROICalibration(){
+  roiCalibMode=false;
+  roiActiveType=null;
+  document.getElementById('roiCalibArea').style.display='none';
+  CVEngine.roiConfig=roiTempConfig;
+  CVEngine.save();
+  CVEngine.updateUI();
+  const heroOk=roiTempConfig.heroCards.filter(Boolean).length;
+  const boardOk=roiTempConfig.board.filter(Boolean).length;
+  const dealerOk=(roiTempConfig.dealer||[]).filter(Boolean).length;
+  const namesOk=(roiTempConfig.seatNames||[]).filter(Boolean).length;
+  const stacksOk=(roiTempConfig.seatStacks||[]).filter(Boolean).length;
+  const cardsOk=(roiTempConfig.seatCards||[]).filter(Boolean).length;
+  const extras=[roiTempConfig.pot?'Pot':'',dealerOk?`D:${dealerOk}`:'',roiTempConfig.heroStack?'HStack':'',roiTempConfig.blinds?'Blinds':'',namesOk?`Nomes:${namesOk}`:'',stacksOk?`Stacks:${stacksOk}`:'',cardsOk?`SCards:${cardsOk}`:''].filter(Boolean).join(', ');
+  const roiSt=document.getElementById('cvROIStatus');
+  if(roiSt)roiSt.textContent=`Calibrado (H:${heroOk} B:${boardOk}${extras?' +'+extras:''})`;
+}
+
+function cancelROICalibration(){
+  roiCalibMode=false;
+  roiActiveType=null;
+  roiIsDragging=false;
+  roiDragStart=null;
+  if(roiLiveRect){roiLiveRect.remove();roiLiveRect=null}
+  document.getElementById('roiCalibArea').style.display='none';
+}
+
+document.addEventListener('keydown',e=>{
+  if(e.code==='Escape'&&roiCalibMode)cancelROICalibration();
+});
+
+// ============ API CALL ============
+let apiKey='';
+let analysisHistory=[];
+let lastAnalysis=null;    // {data, screenshot, fullBoard, timing}
+let currentStreet=null;   // null = auto-detected from API
+
+function saveApiKey(){
+  apiKey=document.getElementById('apiKey').value.trim();
+  if(apiKey){
+    localStorage.setItem('poker_vision_api_key',apiKey);
+    document.getElementById('apiStatus').innerHTML='<span class="status-dot ok"></span> <span style="color:var(--green);font-size:.75rem">Conectado</span>';
+  }
+}
+
+// Load saved key
+(function(){
+  const saved=localStorage.getItem('poker_vision_api_key');
+  if(saved){
+    apiKey=saved;
+    document.getElementById('apiKey').value=saved;
+    document.getElementById('apiStatus').innerHTML='<span class="status-dot ok"></span> <span style="color:var(--green);font-size:.75rem">Salvo</span>';
+  }
+})();
+
+// ============ IMAGE HANDLING ============
+const dropZone=document.getElementById('dropZone');
+
+dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drag')});
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop',e=>{
+  e.preventDefault();dropZone.classList.remove('drag');
+  if(e.dataTransfer.files.length)handleFile(e.dataTransfer.files[0]);
+});
+
+// Paste from clipboard
+document.addEventListener('paste',e=>{
+  const items=e.clipboardData?.items;
+  if(!items)return;
+  for(let item of items){
+    if(item.type.startsWith('image/')){
+      handleFile(item.getAsFile());
+      break;
+    }
+  }
+});
+
+function handleFile(file){
+  if(!file||!file.type.startsWith('image/'))return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const base64=e.target.result;
+    document.getElementById('preview').innerHTML=`<img src="${base64}" alt="Screenshot">`;
+    // Redimensionar para acelerar — imagem menor = menos tokens = resposta mais rápida
+    const maxRes=+document.getElementById('imgRes').value||0;
+    resizeImage(base64,maxRes).then(optimized=>{
+      analyzeScreenshot(optimized);
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+// Pipeline de pré-processamento: resize + (opcional) contraste + nitidez
+function resizeImage(base64,maxW){
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width,h=img.height;
+      const needsResize=maxW&&w>maxW;
+      const enhance=document.getElementById('enhanceImg')?.checked;
+
+      // Se não precisa de nada, retorna original
+      if(!needsResize&&!enhance){resolve(base64);return}
+
+      if(needsResize){const s=maxW/w;w=maxW;h=Math.round(h*s)}
+
+      const canvas=document.createElement('canvas');
+      canvas.width=w;canvas.height=h;
+      const ctx=canvas.getContext('2d');
+      ctx.drawImage(img,0,0,w,h);
+
+      // Boost apenas se checkbox ativo
+      if(enhance){
+        const imageData=ctx.getImageData(0,0,w,h);
+        const d=imageData.data;
+        const contrast=1.12;
+        const brightness=5;
+        for(let i=0;i<d.length;i+=4){
+          d[i]=Math.min(255,Math.max(0,((d[i]-128)*contrast+128)+brightness));
+          d[i+1]=Math.min(255,Math.max(0,((d[i+1]-128)*contrast+128)+brightness));
+          d[i+2]=Math.min(255,Math.max(0,((d[i+2]-128)*contrast+128)+brightness));
+        }
+        ctx.putImageData(imageData,0,0);
+        sharpenCanvas(ctx,w,h,0.3);
+      }
+
+      resolve(canvas.toDataURL('image/jpeg',0.92));
+    };
+    img.src=base64;
+  });
+}
+
+// Unsharp mask simples — melhora legibilidade de texto
+function sharpenCanvas(ctx,w,h,amount){
+  const src=ctx.getImageData(0,0,w,h);
+  const dst=ctx.createImageData(w,h);
+  const s=src.data,d=dst.data;
+  // Kernel: identity + amount*(identity - blur)
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+      const i=(y*w+x)*4;
+      for(let c=0;c<3;c++){
+        // Laplacian neighbor average
+        const avg=(s[((y-1)*w+x)*4+c]+s[((y+1)*w+x)*4+c]+
+                   s[(y*w+x-1)*4+c]+s[(y*w+x+1)*4+c])/4;
+        d[i+c]=Math.min(255,Math.max(0,s[i+c]+amount*(s[i+c]-avg)));
+      }
+      d[i+3]=s[i+3];
+    }
+  }
+  ctx.putImageData(dst,0,0);
+}
+
+async function analyzeScreenshot(base64,timing={}){
+  if(!apiKey){
+    alert('Configure sua API Key primeiro!');
+    return;
+  }
+
+  // Verificar limite antes de chamar API
+  const limit=parseFloat(document.getElementById('costLimit').value)||1;
+  if(costData.totalCost>=limit){
+    alert(`Limite de gasto atingido ($${costData.totalCost.toFixed(3)} / $${limit.toFixed(2)}).\nAumente o limite ou zere a contagem.`);
+    return;
+  }
+
+  const resultsArea=document.getElementById('resultsArea');
+  const t0=performance.now();
+  let timerInterval;
+  resultsArea.innerHTML=`<div class="loading"><div class="spinner"></div><p style="color:var(--muted)">Analisando screenshot...</p><p style="color:var(--gold);font-family:monospace;font-size:.9rem" id="apiTimer">0.0s</p></div>`;
+  timerInterval=setInterval(()=>{
+    const el=document.getElementById('apiTimer');
+    if(el)el.textContent=((performance.now()-t0)/1000).toFixed(1)+'s';
+  },100);
+
+  const model=document.getElementById('modelSelect').value;
+  const mediaType=base64.match(/data:(image\/\w+);/)?.[1]||'image/jpeg';
+  const imageData=base64.replace(/^data:image\/[^;]+;base64,/,'');
+
+  const heroNick=document.getElementById('heroNick').value.trim();
+  const seats=+document.getElementById('tableSeats').value||8;
+  const posMap=getPositionMap(seats);
+  const heroLine=heroNick?`\nHERO: The player named "${heroNick}" is ALWAYS the Hero.`:'';
+
+  // ── Mapa de posições baseado no BTN seat selector ──
+  let heroPosHint='';
+  if(btnSeatIdx>=0){
+    const seatPositions=[];
+    for(let i=0;i<seats;i++){
+      seatPositions.push(posMap[(seats-btnSeatIdx+i)%seats]);
+    }
+    const heroPos=seatPositions[0];
+    const seatPosStr=seatPositions.map((pos,i)=>`S${i+1}=${pos}`).join(' ');
+    heroPosHint=`\nPOSITIONS CONFIRMED (DO NOT CHANGE): ${seatPosStr}. Hero=S1=${heroPos}. BTN=S${btnSeatIdx+1}. Assign each player to their seat by screen position (S1=bottom, clockwise). Skip empty/sitting-out seats.`;
+    timing.heroPosSrc='btnSeat:'+(btnSeatIdx+1)+' hero='+heroPos;
+  }
+
+  // ── Detecção local do dealer via ROIs (antes da AI) ──
+  // Pular se posição manual já definida (mais confiável)
+  let dealerHint='';
+  if(!heroPosHint&&CVEngine.roiConfig?.dealer&&CVEngine.roiConfig.dealer.some(Boolean)){
+    try{
+      const dImg=await CVEngine._loadImage(base64);
+      const dc=document.createElement('canvas');
+      dc.width=dImg.width;dc.height=dImg.height;
+      const dctx=dc.getContext('2d');
+      dctx.drawImage(dImg,0,0);
+      const btnIdx=CVEngine.findDealer(dctx);
+      const dDebug=CVEngine._lastDealerDebug||[];
+      timing.dealerDebug=dDebug.map(d=>`S${d.seat}(${d.location}): y=${d.yellowPct}% w=${d.whitePct}% sc=${d.score}%`).join(' | ');
+
+      if(btnIdx>=0&&CVEngine._lastHeroPos){
+        // D encontrado no seat físico → derivar posição do Hero
+        const detectedHeroPos=CVEngine._lastHeroPos;
+        const heroIdx=posMap.indexOf(detectedHeroPos);
+        if(heroIdx>=0){
+          const seatPositions=[];
+          for(let i=0;i<seats;i++) seatPositions.push(posMap[(heroIdx+i)%posMap.length]);
+          const seatPosStr=seatPositions.map((pos,i)=>`Seat ${i+1} = ${pos}`).join(', ');
+          dealerHint=`\n\n⚠️ POSITION MAPPING FROM CV DEALER DETECTION — USE THIS EXACTLY:
+${seatPosStr}
+D button detected at Seat ${btnIdx+1} → that seat = BTN → Hero (Seat 1) = ${detectedHeroPos}.
+Simply identify which player is at each seat by screen position, then use the mapping above.
+Skip empty or "Sitting Out" seats. DO NOT recalculate positions.`;
+          timing.dealerLocal='D@Seat'+(btnIdx+1)+' → Hero='+detectedHeroPos;
+          // Auto-atualizar o BTN seat se não marcado manualmente
+          if(btnSeatIdx<0){
+            btnSeatIdx=btnIdx;
+            buildSeatMap();
+          }
+        }
+      }else{
+        timing.dealerLocal='not found';
+      }
+    }catch(e){console.warn('Dealer detection error:',e)}
+  }
+
+  const prompt=`OUTPUT ONLY RAW JSON. GGPoker ${seats}-max screenshot.
+{"hero_cards":["As","Qc"],"board":["Kh","7d","2s"],"villain_names":["P1","P2"],"villain_cards":[["",""],["",""]],"hero_stack":72858,"villain_stacks":[56988,49700],"pot":10700,"street":"flop","last_action":"bet 5000","blinds":"500/1000","num_players_active":3,"tournament":true,"notes":""}
+RULES: Cards=A-2+s,h,d,c. Face-down=["",""]. "Total Pot" number exactly. Stack=number BELOW name. "$X.XX" near avatar=BOUNTY ignore. Board empty=preflop=[].${heroLine}
+DO NOT include hero_position or villain_positions. I calculate positions myself. Just extract what you SEE.`;
+
+  try{
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key':apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body:JSON.stringify({
+        model:model,
+        max_tokens:512,
+        messages:[
+          {role:'user',content:[
+            {type:'image',source:{type:'base64',media_type:mediaType,data:imageData}},
+            {type:'text',text:prompt}
+          ]},
+          {role:'assistant',content:'{'}
+        ]
+      })
+    });
+
+    if(!resp.ok){
+      const err=await resp.json();
+      throw new Error(err.error?.message||`API Error ${resp.status}`);
+    }
+
+    const data=await resp.json();
+    clearInterval(timerInterval);
+    const elapsed=((performance.now()-t0)/1000).toFixed(1);
+    const text=data.content[0]?.text||'';
+    console.log('📋 API Response:', text.substring(0,500));
+
+    // Rastrear tokens e custo (inclui tempo)
+    timing.apiMs=elapsed;
+    if(data.usage){data.usage._elapsed=elapsed;data.usage._timing=timing;trackUsage(model,data.usage)}
+
+    // Verificar limite antes de processar
+    const limit=parseFloat(document.getElementById('costLimit').value)||1;
+    if(costData.totalCost>limit){
+      resultsArea.innerHTML=`<div class="card-panel" style="border-color:var(--gold)"><h3 style="color:var(--gold)">Limite atingido</h3><p style="font-size:.85rem;color:var(--dim)">Voc&ecirc; atingiu $${costData.totalCost.toFixed(3)} de $${limit.toFixed(2)}. Aumente o limite no painel de custos para continuar.</p></div>`;
+      return;
+    }
+
+    // Parse JSON — prefill já injetou "{", então concatenar
+    let jsonStr='{'+text;
+    const jsonMatch=jsonStr.match(/\{[\s\S]*\}/);
+    if(jsonMatch)jsonStr=jsonMatch[0];
+
+    let parsed=JSON.parse(jsonStr);
+
+    // ── Posições calculadas localmente (NÃO pela AI) + ordenar por posição ──
+    if(btnSeatIdx>=0){
+      const heroPos=posMap[(seats-btnSeatIdx)%seats];
+      parsed.hero_position=heroPos;
+      // Atribuir posições aos villains baseado na ordem (clockwise do hero)
+      const numV=(parsed.villain_names||[]).length;
+      if(numV>0){
+        // Criar array indexado com posição de cada villain
+        const villainData=[];
+        for(let v=0;v<numV;v++){
+          const pos=posMap[(posMap.indexOf(heroPos)+v+1)%posMap.length];
+          villainData.push({
+            name:(parsed.villain_names||[])[v],
+            stack:(parsed.villain_stacks||[])[v],
+            cards:(parsed.villain_cards||[])[v],
+            position:pos,
+            posOrder:posMap.indexOf(pos)
+          });
+        }
+        // Ordenar por posição (BTN→SB→BB→UTG→...)
+        villainData.sort((a,b)=>a.posOrder-b.posOrder);
+        parsed.villain_names=villainData.map(v=>v.name);
+        parsed.villain_stacks=villainData.map(v=>v.stack);
+        parsed.villain_cards=villainData.map(v=>v.cards);
+        parsed.villain_positions=villainData.map(v=>v.position);
+      }
+      console.log(`🎯 Positions set: Hero=${heroPos} (BTN@S${btnSeatIdx+1}) Villains=${(parsed.villain_positions||[]).join(',')}`);
+    }else{
+      // Sem BTN marcado — deixar o que a AI retornou ou vazio
+      if(!parsed.hero_position)parsed.hero_position='?';
+    }
+
+    // ── Validação & correção automática ──
+    const issues=validateExtraction(parsed);
+    if(issues.length>0){
+      console.warn('Poker Vision — problemas detectados:',issues);
+      parsed._warnings=issues;
+    }
+
+    processAnalysis(parsed,base64,timing);
+
+  }catch(err){
+    clearInterval(timerInterval);
+    console.error('❌ Analysis error:',err);
+    resultsArea.innerHTML=`<div class="card-panel" style="border-color:var(--red)"><h3 style="color:var(--red)">Erro na an&aacute;lise</h3><p style="font-size:.85rem;color:var(--dim)">${err.message}</p><p style="font-size:.78rem;color:var(--muted);margin-top:8px">Verifique sua API key e tente novamente.</p><p style="font-size:.65rem;color:var(--muted);margin-top:4px;font-family:monospace;word-break:break-all">${err.stack||''}</p></div>`;
+  }
+}
+
+// ============ VALIDAÇÃO DE DADOS ============
+function validateExtraction(d){
+  const issues=[];
+
+  // 1. Pot deve ser positivo
+  if(!d.pot||d.pot<=0)issues.push('Pot não detectado ou zero');
+
+  // 2. Hero cards: validar notação
+  if(d.hero_cards){
+    d.hero_cards=d.hero_cards.map(c=>{
+      if(!c||c==='')return c;
+      // Corrigir 10 → T
+      c=c.replace(/^10/,'T');
+      // Validar formato (rank + suit)
+      const valid=/^[AKQJT98765432][shdc]$/i.test(c);
+      if(!valid)issues.push('Carta hero inválida: '+c);
+      return c;
+    });
+  }
+
+  // 3. Board cards: validar notação
+  if(d.board&&Array.isArray(d.board)){
+    d.board=d.board.map(c=>{
+      if(!c||c==='')return c;
+      c=c.replace(/^10/,'T');
+      return c;
+    }).filter(c=>c&&c!=='');
+  }
+
+  // 4. Villain cards: garantir que face-down = ["",""]
+  if(d.villain_cards){
+    d.villain_cards=d.villain_cards.map(vc=>{
+      if(!Array.isArray(vc))return['',''];
+      return vc.map(c=>{
+        if(!c||c==='')return '';
+        c=c.replace(/^10/,'T');
+        // Se parece inventado (face-down não deveria ter valor), limpar
+        return c;
+      });
+    });
+  }
+
+  // 5. Stacks devem ser números razoáveis
+  if(d.hero_stack&&(d.hero_stack<0||d.hero_stack>10000000)){
+    issues.push('Hero stack suspeito: '+d.hero_stack);
+  }
+
+  // 6. Posições válidas
+  const seats=+document.getElementById('tableSeats').value||8;
+  const validPos=getPositionMap(seats);
+  if(d.hero_position&&!validPos.includes(d.hero_position.toUpperCase())){
+    issues.push('Posição hero inválida: '+d.hero_position);
+  }
+
+  // 7. Street coerente com board
+  if(d.board){
+    const bc=d.board.filter(c=>c&&c!=='').length;
+    const expectedStreet=bc===0?'preflop':bc===3?'flop':bc===4?'turn':'river';
+    if(d.street&&d.street.toLowerCase()!==expectedStreet){
+      issues.push(`Street "${d.street}" inconsistente com ${bc} cartas no board (deveria ser ${expectedStreet})`);
+      d.street=expectedStreet; // Auto-corrigir
+    }
+  }
+
+  // 8. Num players deve bater com arrays
+  if(d.villain_names&&d.num_players_active){
+    const expected=d.villain_names.length+1; // +1 hero
+    if(d.num_players_active!==expected){
+      issues.push(`num_players_active=${d.num_players_active} mas há ${expected} jogadores nos dados`);
+      d.num_players_active=expected; // Auto-corrigir
+    }
+  }
+
+  // 9. Arrays devem ter mesmo tamanho
+  if(d.villain_names&&d.villain_stacks&&d.villain_names.length!==d.villain_stacks.length){
+    issues.push('villain_names e villain_stacks com tamanhos diferentes');
+  }
+
+  return issues;
+}
+
+function processAnalysis(data,screenshot,timing={}){
+  // Salvar dados para re-análise por street
+  const fullBoard=(data.board||[]).map(c=>parseCard(c)).filter(Boolean);
+  lastAnalysis={data,screenshot,fullBoard,timing};
+  currentStreet=null; // auto-detect
+
+  // Auto-aprender templates a partir da análise AI
+  if(CVEngine.learningMode&&CVEngine.roiConfig&&timing.mode!=='CV Local'&&timing.mode!=='Python CV'){
+    CVEngine.learnFromAnalysis(screenshot,data);
+    // Também ensinar o Python server se disponível
+    teachPythonServer(screenshot,data.hero_cards||[],data.board||[]);
+  }
+
+  runAnalysisWithBoard(data,fullBoard,true);
+}
+
+// Re-analisa com board limitado pela street selecionada
+function runAnalysisWithBoard(data,boardCards,addToHistory){
+  const iter=+document.getElementById('mcIter').value;
+
+  const heroCards=(data.hero_cards||[]).map(c=>parseCard(c)).filter(Boolean);
+  const villainCards=(data.villain_cards||[]).map(vc=>(vc||[]).map(c=>parseCard(c)));
+  const activeVillains=villainCards.filter(vc=>vc.length>=2);
+
+  // Determinar street a partir do board
+  const streetName=boardCards.length===0?'preflop':boardCards.length===3?'flop':boardCards.length===4?'turn':'river';
+  const displayData={...data,street:streetName,board:boardCards.map(c=>c)};
+
+  let equity=null;
+  let heroHand=null;
+  if(heroCards.length===2){
+    const allCards=[...heroCards,...boardCards];
+    if(allCards.length>=5)heroHand=evaluate(allCards);
+
+    const vHands=activeVillains.length>0?activeVillains.map(vc=>[vc[0]||null,vc[1]||null]):[[null,null]];
+    const boardPad=[...boardCards];
+    while(boardPad.length<5)boardPad.push(null);
+
+    const tMC=performance.now();
+    equity=monteCarlo(heroCards,vHands,boardPad,iter);
+    const mcMs=(performance.now()-tMC).toFixed(0);
+    if(lastAnalysis?.timing)lastAnalysis.timing.mcMs=mcMs;
+  }
+
+  let potOdds=null;
+  // Pot odds: usar bet_to_call direto (mais preciso) ou extrair do last_action
+  const betAmount=data.bet_to_call||(()=>{
+    if(!data.last_action)return 0;
+    const m=data.last_action.match(/(\d[\d,.]*)/);
+    return m?+m[1].replace(/,/g,''):0;
+  })();
+  if(data.pot&&betAmount>0){
+    potOdds=(betAmount/(data.pot+betAmount+betAmount)*100).toFixed(1);
+  }
+
+  let spr=null;
+  if(data.hero_stack&&data.pot&&data.pot>0){
+    // SPR = effective stack / pot (effective = min(hero, menor villain ativo))
+    const vStacks=(data.villain_stacks||[]).filter(s=>typeof s==='number'&&s>0);
+    const effectiveStack=vStacks.length>0?Math.min(data.hero_stack,...vStacks):data.hero_stack;
+    spr=(effectiveStack/data.pot).toFixed(1);
+  }
+
+  const suggestion=generateSuggestion(displayData,equity,potOdds,spr,heroHand);
+
+  // Renderizar barra de controle + resultados
+  renderControlBar(boardCards.length);
+  renderResults(displayData,heroCards,boardCards,villainCards,equity,potOdds,spr,heroHand,suggestion);
+
+  if(addToHistory){
+    const entry={
+      time:new Date().toLocaleTimeString(),
+      heroCards:heroCards.join(' '),
+      board:boardCards.join(' '),
+      equity:equity?.hero||'?',
+      suggestion:suggestion.action,
+      data:data
+    };
+    analysisHistory.unshift(entry);
+    if(analysisHistory.length>20)analysisHistory.pop();
+    renderHistory();
+  }
+}
+
+// Barra de controle com botões de street + limpar
+function renderControlBar(activeBoardLen){
+  const fb=lastAnalysis?.fullBoard||[];
+  const maxCards=fb.length;
+  // Determinar quais streets estão disponíveis
+  const streets=[
+    {name:'Preflop',cards:0,icon:'&#9898;'},
+    {name:'Flop',cards:3,icon:'&#127183;'},
+    {name:'Turn',cards:4,icon:'&#127183;'},
+    {name:'River',cards:5,icon:'&#127183;'}
+  ];
+
+  let bar=document.getElementById('controlBar');
+  if(!bar){
+    bar=document.createElement('div');
+    bar.id='controlBar';
+    bar.className='control-bar';
+    const resultsArea=document.getElementById('resultsArea');
+    resultsArea.parentNode.insertBefore(bar,resultsArea);
+  }
+
+  bar.innerHTML=`
+    <span class="bar-label">Analisar street:</span>
+    ${streets.map(s=>{
+      const enabled=s.cards<=maxCards;
+      const active=activeBoardLen===s.cards;
+      return `<button class="street-btn${active?' active':''}"
+        ${!enabled?'disabled':''}
+        onclick="changeStreet(${s.cards})"
+        title="${enabled?'Analisar '+s.name:'Sem cartas suficientes'}"
+      >${s.name}${s.cards>0?' ('+s.cards+')':''}</button>`;
+    }).join('')}
+    <div class="control-divider"></div>
+    <button class="btn-new" onclick="newAnalysis()" title="Novo screenshot">&#128247; Nova An&aacute;lise</button>
+    <button class="btn-clear" onclick="clearAll()" title="Limpar tudo">&#128465; Limpar</button>
+  `;
+}
+
+function changeStreet(numCards){
+  if(!lastAnalysis)return;
+  const trimmedBoard=lastAnalysis.fullBoard.slice(0,numCards);
+  runAnalysisWithBoard(lastAnalysis.data,trimmedBoard,false);
+}
+
+function newAnalysis(){
+  // Limpa preview e resultado, pronto para novo screenshot
+  document.getElementById('preview').innerHTML='';
+  document.getElementById('resultsArea').innerHTML='';
+  const bar=document.getElementById('controlBar');
+  if(bar)bar.remove();
+  lastAnalysis=null;
+  currentStreet=null;
+}
+
+function clearAll(){
+  newAnalysis();
+  analysisHistory=[];
+  renderHistory();
+}
+
+// ============ PRO ENGINE — Ranges, Board Texture, Bet Sizing ============
+
+// GTO Preflop ranges por posição (% de mãos para abrir/3bet)
+// Baseado em solver outputs para 100bb cash e MTT mid-stack
+const PREFLOP_RANGES={
+  // {open: % mãos para RFI, call3b: % para call 3bet, fourBet: % para 4bet}
+  UTG:    {open:14, call3b:6,  fourBet:3},
+  'UTG+1':{open:16, call3b:7,  fourBet:3},
+  'UTG+2':{open:18, call3b:8,  fourBet:3.5},
+  MP:     {open:21, call3b:9,  fourBet:4},
+  HJ:     {open:25, call3b:10, fourBet:4.5},
+  CO:     {open:30, call3b:12, fourBet:5},
+  BTN:    {open:45, call3b:15, fourBet:6},
+  SB:     {open:40, call3b:13, fourBet:7},
+  BB:     {open:0,  call3b:0,  fourBet:5, defend:45}, // BB defende wide
+};
+
+// Classificar mão preflop em tier (1=premium, 5=lixo)
+// ═══ HAND RANKING TABLE (169 mãos únicas, baseado em equity preflop) ═══
+// Formato: "RRs" ou "RRo" ou "RR" (pair). Rank 1=melhor, 169=pior
+const HAND_RANK_TABLE={
+  'AA':1,'KK':2,'QQ':3,'JJ':4,'AKs':5,'AKo':6,'AQs':7,'TT':8,'AJs':9,
+  'KQs':10,'ATs':11,'AQo':12,'KJs':13,'99':14,'QJs':15,'JTs':16,'KQo':17,
+  'AJo':18,'KTs':19,'A9s':20,'QTs':21,'88':22,'ATo':23,'K9s':24,'J9s':25,
+  'Q9s':26,'T9s':27,'A8s':28,'KJo':29,'77':30,'A7s':31,'QJo':32,'A5s':33,
+  'A6s':34,'A4s':35,'JTo':36,'K8s':37,'A3s':38,'KTo':39,'Q8s':40,'T8s':41,
+  'A2s':42,'J8s':43,'66':44,'98s':45,'QTo':46,'K7s':47,'87s':48,'55':49,
+  'Q7s':50,'K6s':51,'97s':52,'76s':53,'T7s':54,'K5s':55,'J7s':56,'Q9o':57,
+  'T9o':58,'K4s':59,'J9o':60,'44':61,'Q6s':62,'K3s':63,'86s':64,'65s':65,
+  'K2s':66,'Q5s':67,'96s':68,'J6s':69,'33':70,'T6s':71,'75s':72,'54s':73,
+  'Q4s':74,'A9o':75,'Q3s':76,'87o':77,'22':78,'Q2s':79,'J5s':80,'98o':81,
+  '64s':82,'T8o':83,'85s':84,'J4s':85,'53s':86,'A8o':87,'J3s':88,'76o':89,
+  'J2s':90,'95s':91,'74s':92,'T5s':93,'43s':94,'A7o':95,'T4s':96,'A5o':97,
+  'T3s':98,'84s':99,'63s':100,'A6o':101,'T2s':102,'A4o':103,'52s':104,
+  '94s':105,'97o':106,'73s':107,'A3o':108,'J8o':109,'93s':110,'86o':111,
+  '65o':112,'92s':113,'K8o':114,'42s':115,'A2o':116,'83s':117,'Q8o':118,
+  '82s':119,'96o':120,'75o':121,'T7o':122,'54o':123,'K7o':124,'32s':125,
+  '72s':126,'J7o':127,'K6o':128,'Q7o':129,'85o':130,'64o':131,'T6o':132,
+  'K5o':133,'J6o':134,'53o':135,'K4o':136,'Q6o':137,'K3o':138,'43o':139,
+  'Q5o':140,'74o':141,'K2o':142,'Q4o':143,'J5o':144,'95o':145,'Q3o':146,
+  'Q2o':147,'84o':148,'63o':149,'J4o':150,'T5o':151,'52o':152,'J3o':153,
+  'J2o':154,'T4o':155,'94o':156,'73o':157,'42o':158,'T3o':159,'93o':160,
+  'T2o':161,'83o':162,'92o':163,'82o':164,'72o':165,'62o':166,'32o':167
+};
+
+function getHandKey(c1,c2){
+  if(!c1||!c2||c1.length<2||c2.length<2)return null;
+  const r1=c1[0],r2=c2[0];
+  const v1=cval(r1),v2=cval(r2);
+  const suited=c1.slice(-1)===c2.slice(-1);
+  const hi=v1>=v2?r1:r2, lo=v1>=v2?r2:r1;
+  if(hi===lo)return hi+lo; // pair: "AA","KK"
+  return hi+lo+(suited?'s':'o'); // "AKs","KQo"
+}
+
+function getHandPercentile(c1,c2){
+  const key=getHandKey(c1,c2);
+  if(!key)return 100;
+  const rank=HAND_RANK_TABLE[key];
+  if(!rank)return 85; // desconhecido → fraco
+  return Math.round((rank/167)*100); // 1→1%, 167→100%
+}
+
+function getHandTier(c1,c2){
+  const pct=getHandPercentile(c1,c2);
+  if(pct<=3)return 1;   // Top 3%: AA,KK,QQ,JJ,AKs
+  if(pct<=10)return 2;  // Top 10%: AKo-KQs,TT,AQs,AJs
+  if(pct<=25)return 3;  // Top 25%: broadways, medium pairs, suited connectors
+  if(pct<=45)return 4;  // Top 45%: speculative
+  return 5;             // Lixo
+}
+
+// Análise de board texture
+function analyzeBoardTexture(boardCards){
+  if(!boardCards||boardCards.length<3)return{type:'none'};
+  const suits=boardCards.map(c=>c.slice(-1));
+  const ranks=boardCards.map(c=>cval(c[0])).sort((a,b)=>b-a);
+
+  // Flush draw analysis
+  const suitCounts={};
+  suits.forEach(s=>suitCounts[s]=(suitCounts[s]||0)+1);
+  const maxSuit=Math.max(...Object.values(suitCounts));
+  const monotone=maxSuit>=3;
+  const flushDraw=maxSuit>=2;
+  const flushComplete=maxSuit>=3&&boardCards.length>=4?Object.values(suitCounts).some(v=>v>=4):false;
+
+  // Straight draw analysis
+  const uniqueRanks=[...new Set(ranks)].sort((a,b)=>b-a);
+  let maxConn=1,conn=1;
+  for(let i=1;i<uniqueRanks.length;i++){
+    if(uniqueRanks[i-1]-uniqueRanks[i]<=2)conn++;
+    else conn=1;
+    maxConn=Math.max(maxConn,conn);
+  }
+  const straighty=maxConn>=3;
+
+  // Paired board
+  const rankCounts={};
+  ranks.forEach(r=>rankCounts[r]=(rankCounts[r]||0)+1);
+  const paired=Object.values(rankCounts).some(v=>v>=2);
+  const trips=Object.values(rankCounts).some(v=>v>=3);
+
+  // High cards
+  const highCards=ranks.filter(r=>r>=11).length; // J+
+  const hasAce=ranks.includes(14);
+
+  // Wet vs Dry score (0=bone dry, 10=ultra wet)
+  let wetness=0;
+  if(flushDraw)wetness+=2;
+  if(monotone)wetness+=2;
+  if(straighty)wetness+=2;
+  if(maxConn>=4)wetness+=1;
+  if(!paired)wetness+=1;
+  if(ranks[0]-ranks[ranks.length-1]<=6)wetness+=1;
+  if(highCards>=2)wetness+=1;
+
+  let type='medium';
+  if(wetness<=2)type='dry';
+  else if(wetness<=4)type='medium';
+  else type='wet';
+
+  return{
+    type,wetness,monotone,flushDraw,flushComplete,straighty,paired,trips,
+    highCards,hasAce,
+    hiCard:ranks[0],loCard:ranks[ranks.length-1],
+    desc:type==='dry'?'Dry (favor aggressor)':type==='wet'?'Wet (draws poss\u00edveis)':'Medium'
+  };
+}
+
+// Detectar draws do hero
+function detectDraws(heroCards,boardCards){
+  if(!heroCards||heroCards.length<2||!boardCards||boardCards.length<3)return{flush:false,oesd:false,gutshot:false,overcards:0};
+  const allCards=[...heroCards,...boardCards];
+  const suits=allCards.map(c=>c.slice(-1));
+  const ranks=allCards.map(c=>cval(c[0]));
+  const boardRanks=boardCards.map(c=>cval(c[0]));
+  const heroRanks=heroCards.map(c=>cval(c[0]));
+
+  // Flush draw: hero tem 2 do mesmo naipe + board tem 2 do mesmo naipe (total 4)
+  const suitCounts={};
+  suits.forEach(s=>suitCounts[s]=(suitCounts[s]||0)+1);
+  const flushMade=Object.values(suitCounts).some(v=>v>=5);
+  const flushDraw=!flushMade&&Object.values(suitCounts).some(v=>v>=4);
+
+  // Straight draws
+  const unique=[...new Set(ranks)].sort((a,b)=>a-b);
+  // Check windows of 5 for OESD (4 in a row) or gutshot (4 of 5)
+  let oesd=false,gutshot=false;
+  if(unique.includes(14))unique.unshift(1); // Ace low
+  for(let i=0;i<=unique.length-4;i++){
+    const window5=unique.slice(i,i+5);
+    if(window5.length>=4){
+      const span=window5[window5.length-1]-window5[0];
+      if(span===3&&window5.length===4)oesd=true;
+      if(span===4&&window5.length===4)gutshot=true;
+    }
+  }
+
+  // Overcards
+  const boardHi=Math.max(...boardRanks);
+  const overcards=heroRanks.filter(r=>r>boardHi).length;
+
+  return{flushDraw:flushDraw&&!flushMade,flushMade,oesd,gutshot,overcards};
+}
+
+// Engine de sugestão profissional
+function generateSuggestion(data,equity,potOdds,spr,heroHand){
+  const eq=equity?parseFloat(equity.hero):null;
+  const po=potOdds?parseFloat(potOdds):null;
+  const sprVal=spr?parseFloat(spr):null;
+  const pos=(data.hero_position||'').toUpperCase();
+  const numActive=data.num_players_active||2;
+  const isTourney=data.tournament;
+  const blinds=data.blinds||'';
+  const heroStack=data.hero_stack||0;
+  const pot=data.pot||0;
+
+  // Parse hero cards para análise
+  const hc=data.hero_cards||[];
+  const hc0=hc[0]||'',hc1=hc[1]||'';
+  const boardRaw=(data.board||[]).filter(c=>c&&c.length>=2);
+  const boardParsed=boardRaw.map(c=>parseCard(c)).filter(Boolean);
+  const heroParsed=[parseCard(hc0),parseCard(hc1)].filter(Boolean);
+
+  let action='',reasoning='',confidence='medium';
+  let details=[];
+
+  if(!eq)return{action:'Aguardando',reasoning:'Cartas do Hero n\u00e3o identificadas',confidence:'low'};
+
+  // ── Big blinds (stack depth) ──
+  let bb=0;
+  const bbMatch=blinds.match(/\/\s*([\d,.]+)/);
+  if(bbMatch)bb=parseFloat(bbMatch[1].replace(/,/g,''))||0;
+  const stackBB=bb>0?Math.round(heroStack/bb):100;
+
+  // ══════════ PREFLOP ══════════
+  if(!boardRaw.length||boardRaw.every(c=>!c)){
+    const tier=getHandTier(hc0,hc1);
+    const pct=getHandPercentile(hc0,hc1);
+    const range=PREFLOP_RANGES[pos]||PREFLOP_RANGES['MP'];
+
+    details.push(`Tier ${tier} | Top ${pct}%`);
+    details.push(`Posi\u00e7\u00e3o: ${pos} (open ${range.open}%)`);
+    if(stackBB>0)details.push(`Stack: ${stackBB}bb`);
+
+    // ── Push/Fold zone (≤15bb em torneio) ──
+    if(isTourney&&stackBB<=15){
+      details.push('Push/Fold zone');
+      if(stackBB<=8){
+        // Ultra short: push top 30-50% dependendo da posição
+        const pushPct=pos==='BTN'||pos==='SB'?50:pos==='CO'||pos==='HJ'?35:25;
+        if(pct<=pushPct){action='ALL-IN PUSH';reasoning=`${stackBB}bb — push/fold zone`;confidence='high'}
+        else{action='FOLD';reasoning=`${stackBB}bb — fora do range de push em ${pos}`;confidence='high'}
+      }else{
+        const pushPct=pos==='BTN'||pos==='SB'?40:pos==='CO'||pos==='HJ'?28:pos==='MP'?20:15;
+        if(pct<=pushPct){action='ALL-IN PUSH';reasoning=`${stackBB}bb — push em ${pos}`;confidence='high'}
+        else if(tier<=3&&eq>50){action='RAISE (2.2x)';reasoning=`Mão forte mas não precisa push com ${stackBB}bb`;confidence='medium'}
+        else{action='FOLD';reasoning=`${stackBB}bb — fora do range de push/open em ${pos}`;confidence='high'}
+      }
+    }
+    // ── Standard preflop ──
+    else{
+      const facingRaise=data.last_action&&/raise|bet|all.?in/i.test(data.last_action);
+      const facing3bet=data.last_action&&/3.?bet|re.?raise/i.test(data.last_action);
+
+      if(facing3bet){
+        // Facing 3bet/raise
+        if(tier===1){action='4-BET / ALL-IN';reasoning=`Premium (tier 1) vs 3bet — value 4bet`;confidence='high'}
+        else if(tier===2&&pct<=range.call3b){action='CALL';reasoning=`Mão forte (tier 2) — call 3bet in position`;confidence='medium'}
+        else if(tier===2&&pos==='BB'){action='CALL';reasoning=`BB defense — mão forte o suficiente`;confidence='medium'}
+        else{action='FOLD';reasoning=`Tier ${tier} — fora do range de call 3bet em ${pos}`;confidence='high'}
+      }
+      else if(facingRaise){
+        // Facing open raise
+        if(tier===1){action='3-BET (3x raise)';reasoning=`Premium — 3bet por valor`;confidence='high'}
+        else if(tier===2){
+          if(pos==='BB'||pos==='SB'){action='3-BET ou CALL';reasoning=`Mão forte — 3bet por valor ou call de blinds`;confidence='medium'}
+          else{action='3-BET';reasoning=`Mão forte em ${pos} — 3bet`;confidence='medium'}
+        }
+        else if(tier===3){
+          if(pos==='BB'){action='CALL';reasoning=`BB defense — mão jogável`;confidence='medium'}
+          else if(pos==='BTN'||pos==='CO'){action='CALL';reasoning=`Position — call em ${pos}`;confidence='medium'}
+          else{action='FOLD';reasoning=`Tier ${tier} sem posição — fold`;confidence='medium'}
+        }
+        else if(tier===4&&pos==='BB'&&eq>35){action='CALL';reasoning=`BB defend com odds — mão especulativa`;confidence='low'}
+        else{action='FOLD';reasoning=`Tier ${tier} — fora do range vs raise`;confidence='high'}
+      }
+      else{
+        // RFI (first to act or limped to)
+        if(pct<=range.open){
+          const sizing=stackBB<=25?'2.2x':'2.5x';
+          if(tier<=2){action=`RAISE (${sizing} BB)`;reasoning=`Mão forte — open raise em ${pos}`;confidence='high'}
+          else{action=`RAISE (${sizing} BB)`;reasoning=`Dentro do range de open (top ${range.open}%) em ${pos}`;confidence='medium'}
+        }
+        else if(pos==='SB'&&tier<=4&&numActive===2){
+          action='RAISE (2.5x) ou LIMP';reasoning=`SB vs BB — range mais amplo heads-up`;confidence='low';
+        }
+        else{action='FOLD';reasoning=`Top ${pct}% — fora do range de open ${range.open}% em ${pos}`;confidence='high'}
+      }
+    }
+
+    details.push(`Equity vs random: ${eq}%`);
+  }
+
+  // ══════════ POSTFLOP ══════════
+  else{
+    const board=analyzeBoardTexture(boardParsed);
+    const draws=detectDraws(heroParsed,boardParsed);
+    const street=boardRaw.length===3?'flop':boardRaw.length===4?'turn':'river';
+    const handRank=heroHand?heroHand.rank:0;
+    const handName=heroHand?heroHand.name:'';
+
+    details.push(`Board: ${board.desc} (wetness ${board.wetness}/10)`);
+    if(draws.flushDraw)details.push('Flush draw');
+    if(draws.flushMade)details.push('FLUSH!');
+    if(draws.oesd)details.push('OESD (8 outs)');
+    if(draws.gutshot)details.push('Gutshot (4 outs)');
+    if(draws.overcards>0)details.push(`${draws.overcards} overcard${draws.overcards>1?'s':''}`);
+    if(handName)details.push(`M\u00e3o: ${handName}`);
+
+    // Outs totais aproximados
+    let totalOuts=0;
+    if(draws.flushDraw)totalOuts+=9;
+    if(draws.oesd)totalOuts+=8;
+    else if(draws.gutshot)totalOuts+=4;
+    if(draws.overcards>0&&handRank<=1)totalOuts+=draws.overcards*3;
+    // Rule of 2 and 4
+    const drawEquity=street==='flop'?totalOuts*4:totalOuts*2;
+    if(totalOuts>0)details.push(`~${totalOuts} outs → ~${drawEquity}% draw equity`);
+
+    // ── Categorizar força da mão (mutuamente exclusivo) ──
+    const hasDraw=draws.flushDraw||draws.oesd;
+    const highKicker=heroParsed[0]&&cval(heroParsed[0][0])>=12;
+    let handCategory='air';
+    if(handRank>=4||(handRank===3&&board.type==='dry')||draws.flushMade) handCategory='monster'; // set+, trips on dry, flush made
+    else if(handRank>=2||(handRank===1&&highKicker)) handCategory='strong'; // two pair, top pair good kicker, overpair
+    else if(handRank===1||hasDraw) handCategory='medium'; // mid/weak pair, flush draw, OESD
+    else if(hasDraw||draws.overcards>0) handCategory='draw';
+    // else stays 'air'
+    const isMonster=handCategory==='monster';
+    const isStrong=handCategory==='strong';
+    const isMedium=handCategory==='medium';
+    const isAir=handCategory==='air';
+
+    // ── Decisão baseada em categoria + contexto ──
+    if(isMonster){
+      if(sprVal!==null&&sprVal<=3){
+        action='ALL-IN';reasoning=`Monster (${handName}) + SPR ${sprVal} baixo — commitable`;confidence='high';
+      }else if(po!==null&&eq>po){
+        const betSize=street==='river'?'75% pot':'66% pot';
+        action=`BET/RAISE (${betSize})`;reasoning=`Monster hand — extrair m\u00e1ximo valor`;confidence='high';
+      }else{
+        action='BET (66-75% pot)';reasoning=`${handName} — value bet, construir pot`;confidence='high';
+      }
+    }
+    else if(isStrong){
+      if(po!==null&&eq>po+5){
+        action='BET (50-66% pot)';reasoning=`Mão forte (${handName||'top pair+'}) — value bet em board ${board.type}`;confidence='high';
+      }else if(po!==null&&eq>po){
+        action='CALL';reasoning=`${handName||'Mão forte'} — equity ${eq}% > pot odds ${po}%`;confidence='medium';
+      }else if(board.type==='wet'&&street!=='river'){
+        action='BET (50% pot)';reasoning=`Mão forte em board wet — proteger equity, negar draws`;confidence='medium';
+      }else{
+        action='CHECK/CALL';reasoning=`${handName} — pot control em board ${board.type}`;confidence='medium';
+      }
+    }
+    else if(hasDraw){
+      // Semi-bluff com draws
+      const drawStr=draws.flushDraw?'flush draw':draws.oesd?'OESD':'draw';
+      if(street==='river'){
+        // River: draw não completou, sem showdown value
+        if(po!==null&&eq<po){action='FOLD';reasoning=`${drawStr} não completou — fold no river`;confidence='high'}
+        else{action='CHECK/FOLD';reasoning=`Missed draw — sem showdown value`;confidence='medium'}
+      }else if(totalOuts>=8){
+        // Semi-bluff com draw forte
+        if(eq>45){action='BET (55% pot)';reasoning=`Semi-bluff com ${drawStr} (~${totalOuts} outs) — fold equity + draw equity`;confidence='medium'}
+        else if(po!==null&&eq>=po-3){action='CALL';reasoning=`${drawStr} com odds diretas (${eq}% vs ${po}%)`;confidence='medium'}
+        else{action='CHECK/CALL';reasoning=`${drawStr} — implied odds justificam call`;confidence='low'}
+      }else{
+        // Draw fraco (gutshot)
+        if(po!==null&&po<15&&eq>po){action='CALL';reasoning=`Gutshot com pot odds favoráveis`;confidence='low'}
+        else{action='CHECK/FOLD';reasoning=`Draw fraco (~${totalOuts} outs) — sem odds`;confidence='medium'}
+      }
+    }
+    else if(isMedium){
+      // Medium hand: pot control
+      if(board.type==='dry'&&handRank>=1){
+        action='BET (33% pot)';reasoning=`Par em board dry — thin value bet pequeno`;confidence='medium';
+      }else if(po!==null&&eq>po){
+        action='CHECK/CALL';reasoning=`Mão mediana (${handName||'mid pair'}) — pot control`;confidence='medium';
+      }else{
+        action='CHECK/FOLD';reasoning=`Mão mediana em board ${board.type} — cuidado`;confidence='low';
+      }
+    }
+    else if(isAir){
+      // Bluff spots
+      if(board.type==='dry'&&numActive<=2&&street==='flop'){
+        action='BET (33% pot)';reasoning=`C-bet bluff em board dry HU — alta fold equity`;confidence='low';
+      }else if(draws.overcards>=2&&street==='flop'){
+        action='BET (40% pot)';reasoning=`Overcards — semi-bluff com equity de backdoor`;confidence='low';
+      }else{
+        action='CHECK/FOLD';reasoning=`Sem mão, sem draw — give up`;confidence='high';
+      }
+    }
+    else{
+      // Fallback genérico
+      if(eq>60){action='BET (55% pot)';confidence='medium'}
+      else if(po!==null&&eq>po){action='CALL';confidence='medium'}
+      else{action='CHECK/FOLD';confidence='medium'}
+      reasoning=`Equity ${eq}%${po!==null?' vs pot odds '+po+'%':''}`;
+    }
+
+    // ── SPR adjustment (all streets) ──
+    if(sprVal!==null&&sprVal<=3&&eq>40&&action!=='ALL-IN'){
+      details.push(`SPR ${sprVal} (commitable)`);
+      if(handRank>=1||hasDraw){action='ALL-IN';reasoning+=` | SPR baixo — jam`;confidence='high'}
+    }
+
+    // ── Multi-way pot adjustment ──
+    if(numActive>=3&&!isMonster){
+      details.push(`Multiway (${numActive} jogadores)`);
+      if(action.includes('BET')&&!isStrong){
+        action='CHECK';reasoning+=` | Multiway — tighten range de bet`;
+      }
+    }
+
+    details.push(`Equity: ${eq}%${po!==null?' | Pot Odds: '+po+'%':''}`);
+  }
+
+  return{action,reasoning,confidence,details};
+}
+
+function renderResults(data,heroCards,boardCards,villainCards,equity,potOdds,spr,heroHand,suggestion){
+  const resultsArea=document.getElementById('resultsArea');
+  const confColor={'high':'var(--green)','medium':'var(--gold)','low':'var(--red)'};
+
+  // ── Seção de Oponentes (seat-based quando disponível) ──
+  let villainInfo='';
+  const seats=data._seats;
+  if(seats&&seats.length){
+    // Usar dados seat-based completos
+    const villainSeats=seats.filter(s=>!s.is_hero);
+    villainSeats.forEach(s=>{
+      const pos=s.position||'?';
+      const name=s.name||'Seat '+s.id;
+      const stack=s.stack||0;
+      const bet=s.bet||0;
+      const bounty=s.bounty||'';
+      const action=s.action||'';
+      const cards=(s.cards||[]).map(c=>parseCard(c));
+      const hasCards=cards.some(c=>c&&c!=='');
+      const active=s.active;
+      // Cor da borda: BTN=gold, SB/BB=roxo, fold=dim, ativo=border
+      const borderColor=!active?'#333':pos==='BTN'?'var(--gold)':pos==='SB'||pos==='BB'?'#a78bfa':'var(--border)';
+      villainInfo+=`<div style="margin-bottom:5px;padding:4px 8px;background:rgba(255,255,255,${active?'.04':'.01'});border-radius:5px;border-left:3px solid ${borderColor};${!active?'opacity:.5':''}">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="background:rgba(255,255,255,.08);padding:1px 5px;border-radius:3px;font-size:.68rem;color:var(--muted);font-family:monospace;min-width:20px;text-align:center">${s.id}</span>
+          <span class="label" style="min-width:32px;display:inline-block;text-align:center;font-weight:700;color:${pos==='BTN'?'var(--gold)':pos==='SB'||pos==='BB'?'#a78bfa':'var(--dim)'}">${pos}</span>
+          <span class="value" style="font-weight:600">${name}</span>
+          ${hasCards?cards.map(c=>cardHTML(c)).join(''):'<span style="color:var(--muted);font-size:.68rem">[face-down]</span>'}
+          ${stack>0?`<span style="color:var(--green);font-size:.76rem">${stack.toLocaleString()}<span style="color:var(--muted);font-size:.62rem"> chips</span></span>`:''}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:2px;padding-left:28px;flex-wrap:wrap">
+          ${bet>0?`<span style="color:var(--red);font-size:.72rem;font-weight:600">bet ${bet.toLocaleString()}</span>`:''}
+          ${bounty?`<span style="color:var(--gold);font-size:.72rem">bounty ${bounty}</span>`:''}
+          ${action?`<span style="color:#93c5fd;font-size:.72rem;font-style:italic">${action}</span>`:''}
+        </div>
+      </div>`;
+    });
+  }else{
+    // Fallback: formato legado (arrays paralelos)
+    (data.villain_names||[]).forEach((name,i)=>{
+      const cards=villainCards[i]||[];
+      const pos=data.villain_positions?.[i]||'?';
+      const stack=data.villain_stacks?.[i]||'?';
+      const bet=data.villain_bets?.[i]||0;
+      const bounty=data.villain_bounties?.[i]||'';
+      const hasCards=cards.some(c=>c&&c!=='');
+      villainInfo+=`<div style="margin-bottom:5px;padding:3px 6px;background:rgba(255,255,255,.03);border-radius:4px;border-left:3px solid ${pos==='BTN'?'var(--gold)':pos==='SB'||pos==='BB'?'#a78bfa':'var(--border)'}">
+        <span class="label" style="min-width:38px;display:inline-block;text-align:center">${pos}</span>
+        <span class="value" style="font-weight:600">${name||'Villain'}</span>
+        ${hasCards?cards.map(c=>cardHTML(c)).join(''):'<span style="color:var(--muted);font-size:.7rem">[face-down]</span>'}
+        <span style="color:var(--green);font-size:.78rem;margin-left:6px">${typeof stack==='number'&&stack>0?stack.toLocaleString()+'<span style="color:var(--muted);font-size:.65rem"> chips</span>':''}</span>
+        ${bet>0?'<span style="color:var(--red);font-size:.75rem;margin-left:4px;font-weight:600">bet '+bet.toLocaleString()+'</span>':''}
+        ${bounty?'<span style="color:var(--gold);font-size:.72rem;margin-left:4px">bounty '+bounty+'</span>':''}
+      </div>`;
+    });
+  }
+  if(!villainInfo)villainInfo=`<span style="color:var(--muted)">N\u00e3o identificados</span>`;
+
+  // ── Equity bars ──
+  let eqBars='';
+  if(equity){
+    eqBars+=`<div class="eq-row"><span class="eq-lbl">Hero</span><div class="eq-bar"><div class="eq-fill eq-hero" style="width:${Math.max(3,+equity.hero)}%">${equity.hero}%</div></div></div>`;
+    if(equity.villains){
+      equity.villains.forEach((v,i)=>{
+        const name=data.villain_names?.[i]||`Villain ${i+1}`;
+        eqBars+=`<div class="eq-row"><span class="eq-lbl">${name}</span><div class="eq-bar"><div class="eq-fill eq-villain" style="width:${Math.max(3,+v)}%">${v}%</div></div></div>`;
+      });
+    }
+    eqBars+=`<div class="eq-row"><span class="eq-lbl">Empate</span><div class="eq-bar"><div class="eq-fill eq-tie" style="width:${Math.max(1,+equity.tie)}%">${equity.tie}%</div></div></div>`;
+  }
+
+  // ── Hero info extra (bounty) ──
+  const heroBounty=data.hero_bounty||'';
+  const heroSeat=seats?seats.find(s=>s.is_hero):null;
+
+  resultsArea.innerHTML=`<div class="results">
+    <!-- Left: Data -->
+    <div>
+      <div class="card-panel">
+        <h3>&#127183; Dados Extraidos</h3>
+        <div class="extracted-data">
+          <div><span class="label">Hero:</span> ${heroCards.map(c=>cardHTML(c)).join('')} <span style="color:var(--gold);font-size:.78rem;font-weight:700">${data.hero_position||''}</span> <span style="color:var(--green);font-size:.78rem">${data.hero_stack?data.hero_stack.toLocaleString():''}</span>${heroSeat?` <span style="color:var(--muted);font-size:.65rem;font-family:monospace">seat ${heroSeat.id}</span>`:''}</div>
+          <div style="margin:6px 0"><span class="label">Board:</span> ${boardCards.length?boardCards.map(c=>cardHTML(c)).join(''):'<span style="color:var(--muted)">Preflop</span>'}</div>
+          <div><span class="label">Pot:</span> <span class="value" style="color:var(--gold)">${data.pot?data.pot.toLocaleString():'?'}</span></div>
+          ${spr?`<div><span class="label">SPR:</span> <span class="value">${spr}</span> <span style="color:var(--muted);font-size:.75rem">${spr<=3?'(baixo-commitable)':spr<=8?'(m\u00e9dio)':'(alto)'}</span></div>`:''}
+          ${potOdds?`<div><span class="label">Pot Odds:</span> <span class="value">${potOdds}%</span></div>`:''}
+          ${data.blinds?`<div><span class="label">Blinds:</span> <span class="value">${data.blinds}</span></div>`:''}
+          <div style="margin-top:6px"><span class="label">Street:</span> <span class="value">${data.street||'?'}</span></div>
+          ${heroHand?`<div><span class="label">M\u00e3o:</span> <span class="value" style="color:${heroHand.rank>=4?'var(--green)':heroHand.rank>=2?'var(--gold)':'var(--red)'}">${heroHand.name}</span></div>`:''}
+          ${data.last_action?`<div><span class="label">Ação:</span> <span class="value" style="color:var(--red);font-weight:600">${data.last_action}</span></div>`:''}
+          ${data.bet_to_call?`<div><span class="label">Bet to Call:</span> <span class="value" style="color:var(--red)">${data.bet_to_call.toLocaleString()}</span></div>`:''}
+          ${data.total_bet?`<div><span class="label">Total Bet:</span> <span class="value">${data.total_bet.toLocaleString()}</span></div>`:''}
+          ${heroBounty?`<div><span class="label">Bounty:</span> <span class="value" style="color:var(--gold)">${heroBounty}</span></div>`:''}
+        </div>
+      </div>
+      <div class="card-panel" style="margin-top:12px">
+        <h3>&#128100; Oponentes (${data.num_players_active||(seats?seats.filter(s=>s.active&&!s.is_hero).length:'?')} ativos)</h3>
+        <div class="extracted-data">${villainInfo}</div>
+      </div>
+    </div>
+    <!-- Right: Analysis -->
+    <div>
+      <div class="card-panel">
+        <h3>&#128202; Equity (Monte Carlo ${(+document.getElementById('mcIter').value/1000).toFixed(0)}k sim)</h3>
+        ${eqBars||'<span style="color:var(--muted);font-size:.85rem">Cartas do Hero necess\u00e1rias</span>'}
+      </div>
+      <div class="card-panel" style="margin-top:12px">
+        <h3>&#127919; Sugest&atilde;o</h3>
+        <div class="suggestion" style="border-color:${confColor[suggestion.confidence]}">
+          <h4 style="color:${confColor[suggestion.confidence]};font-size:1.1rem">${suggestion.action}</h4>
+          <p>${suggestion.reasoning}</p>
+          ${suggestion.details&&suggestion.details.length?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08)">
+            <p style="font-size:.7rem;color:var(--gold);margin-bottom:4px;font-weight:600">&#128161; An&aacute;lise Detalhada</p>
+            ${suggestion.details.map(d=>`<p style="font-size:.72rem;color:var(--dim);margin:2px 0;padding-left:8px;border-left:2px solid rgba(255,255,255,.06)">${d}</p>`).join('')}
+          </div>`:''}
+          <p style="font-size:.7rem;color:var(--muted);margin-top:6px">Confian\u00e7a: ${suggestion.confidence} | ${data.tournament?'Torneio':'Cash'}</p>
+        </div>
+      </div>
+      ${data.notes?`<div class="card-panel" style="margin-top:12px"><h3>&#128221; Notas</h3><p style="font-size:.82rem;color:var(--dim)">${data.notes}</p></div>`:''}
+      ${data._warnings&&data._warnings.length?`<div class="card-panel" style="margin-top:12px;border-color:var(--gold)"><h3 style="color:var(--gold)">&#9888; Avisos de Valida\u00e7\u00e3o</h3>${data._warnings.map(w=>`<p style="font-size:.78rem;color:var(--gold);margin:3px 0">\u2022 ${w}</p>`).join('')}</div>`:''}
+      ${renderDealerDebug()}
+    </div>
+  </div>${renderTimingBar()}`;
+}
+
+function renderDealerDebug(){
+  const t=lastAnalysis?.timing;
+  if(!t?.dealerDebug)return '';
+  const found=t.dealerLocal&&t.dealerLocal!=='not found';
+  const color=found?'var(--green)':'var(--red)';
+  const icon=found?'&#9989;':'&#10060;';
+  const heroPos=CVEngine._lastHeroPos;
+  return `<div class="card-panel" style="margin-top:12px;border-color:${color}">
+    <h3 style="color:${color}">${icon} Dealer Detection (CV)</h3>
+    <p style="font-size:.8rem;color:var(--dim);margin:4px 0">
+      <b>Resultado:</b> <span style="color:${color}">${found?t.dealerLocal:'Não detectado'}</span>
+      ${heroPos?` → <b style="color:var(--gold)">Hero = ${heroPos}</b>`:''}
+    </p>
+    <div style="font-size:.68rem;color:var(--muted);font-family:monospace;margin-top:4px;line-height:1.5">
+      ${(CVEngine._lastDealerDebug||[]).map(d=>{
+        const isWinner=(d.seat-1)===CVEngine._lastDealerIdx;
+        return `<div style="${isWinner?'color:var(--green);font-weight:bold':''}">
+          ${isWinner?'► BTN':'   '} Seat ${d.seat} ${d.location}: <span style="color:#fbbf24">${d.yellowPct}%</span>y <span style="color:#eee">${d.whitePct}%</span>w score=${d.score}%
+        </div>`;
+      }).join('')}
+    </div>
+    ${!found?`<p style="font-size:.65rem;color:var(--gold);margin-top:6px">Use o seletor "Posição" no topo para definir manualmente (GGPoker mostra sua posição).</p>`:''}
+  </div>`;
+}
+
+function renderTimingBar(){
+  const t=lastAnalysis?.timing;
+  if(!t)return '';
+
+  // Modo Python CV (OCR Server / Chandra)
+  if(t.mode==='Python CV'){
+    const cvMs=parseInt(t.cvMs)||0;
+    const mcMs=parseInt(t.mcMs)||0;
+    const totalMs=cvMs+mcMs;
+    const serverTimings=lastAnalysis?.data?._table?.timings;
+    let serverDetail='';
+    if(serverTimings){
+      const parts=Object.entries(serverTimings).map(([k,v])=>`${k}: ${typeof v==='number'?v.toFixed(0):v}ms`);
+      serverDetail=`<div style="margin-top:4px;padding-top:4px;border-top:1px solid rgba(255,255,255,.06);font-size:.65rem;color:var(--muted)">Server: ${parts.join(' | ')}</div>`;
+    }
+    return `<div style="margin-top:12px;padding:8px 12px;background:var(--surface);border:1px solid #3b82f6;border-radius:8px;font-size:.72rem;font-family:monospace;color:var(--muted)">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <span style="color:#3b82f6">&#9889; OCR Server (Chandra) — Tempo total: <b style="color:#3b82f6">${(totalMs/1000).toFixed(2)}s</b></span>
+      </div>
+      <div style="display:flex;height:12px;border-radius:4px;overflow:hidden;background:#1a1a2e">
+        <div style="width:${totalMs>0?((cvMs/totalMs)*100).toFixed(0):80}%;background:#3b82f6" title="OCR Server: ${cvMs}ms"></div>
+        <div style="width:${totalMs>0?((mcMs/totalMs)*100).toFixed(0):20}%;background:#51cf66" title="Monte Carlo: ${mcMs}ms"></div>
+      </div>
+      <div style="display:flex;gap:12px;margin-top:4px">
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#3b82f6;margin-right:3px"></span>OCR Server: ${cvMs}ms</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#51cf66;margin-right:3px"></span>Monte Carlo: ${mcMs}ms</span>
+      </div>
+      ${serverDetail}
+    </div>`;
+  }
+
+  // Modo CV Local
+  if(t.mode==='CV Local'){
+    const cvMs=parseInt(t.cvMs)||0;
+    const mcMs=parseInt(t.mcMs)||0;
+    const totalMs=cvMs+mcMs;
+    return `<div style="margin-top:12px;padding:8px 12px;background:var(--surface);border:1px solid var(--green);border-radius:8px;font-size:.72rem;font-family:monospace;color:var(--muted)">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <span style="color:var(--green)">&#9889; CV Local — Tempo total: <b style="color:var(--green)">${(totalMs/1000).toFixed(2)}s</b></span>
+        <span style="color:var(--dim);font-size:.65rem">(${((10000/totalMs)||0).toFixed(0)}x mais r&aacute;pido que AI)</span>
+      </div>
+      <div style="display:flex;height:12px;border-radius:4px;overflow:hidden;background:#1a1a2e">
+        <div style="width:${totalMs>0?((cvMs/totalMs)*100).toFixed(0):50}%;background:#fbbf24" title="CV Match: ${cvMs}ms"></div>
+        <div style="width:${totalMs>0?((mcMs/totalMs)*100).toFixed(0):50}%;background:#51cf66" title="Monte Carlo: ${mcMs}ms"></div>
+      </div>
+      <div style="display:flex;gap:12px;margin-top:4px">
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#fbbf24;margin-right:3px"></span>CV Match: ${cvMs}ms</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#51cf66;margin-right:3px"></span>Monte Carlo: ${mcMs}ms</span>
+      </div>
+    </div>`;
+  }
+
+  // Modo AI
+  if(!t.apiMs)return '';
+  const apiSec=parseFloat(t.apiMs);
+  const resizeMs=parseInt(t.resizeMs)||0;
+  const mcMs=parseInt(t.mcMs)||0;
+  const totalMs=apiSec*1000+resizeMs+mcMs;
+  const apiPct=totalMs>0?((apiSec*1000/totalMs)*100).toFixed(0):99;
+  const resPct=totalMs>0?((resizeMs/totalMs)*100).toFixed(0):0;
+  const mcPct=totalMs>0?((mcMs/totalMs)*100).toFixed(0):1;
+  return `<div style="margin-top:12px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:.72rem;font-family:monospace;color:var(--muted)">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+      <span style="color:var(--dim)">&#9201; Tempo total: <b style="color:var(--gold)">${(totalMs/1000).toFixed(1)}s</b></span>
+      ${t.cvFallback?`<span style="color:var(--gold);font-size:.65rem">(CV fallback: ${t.cvFallback})</span>`:''}
+    </div>
+    <div style="display:flex;height:12px;border-radius:4px;overflow:hidden;background:#1a1a2e">
+      <div style="width:${resPct}%;background:#4a9eff;min-width:${resizeMs>0?'2px':'0'}" title="Resize: ${resizeMs}ms"></div>
+      <div style="width:${apiPct}%;background:#ff6b6b" title="API Claude: ${apiSec}s"></div>
+      <div style="width:${mcPct}%;background:#51cf66;min-width:${mcMs>0?'2px':'0'}" title="Monte Carlo: ${mcMs}ms"></div>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:4px;flex-wrap:wrap">
+      <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#4a9eff;margin-right:3px"></span>Resize: ${resizeMs}ms</span>
+      <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#ff6b6b;margin-right:3px"></span>API Claude: ${apiSec}s (${apiPct}%)</span>
+      <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#51cf66;margin-right:3px"></span>Monte Carlo: ${mcMs}ms</span>
+    </div>
+  </div>`;
+}
+
+function toggleCVMode(){
+  CVEngine.enabled=document.getElementById('cvToggle').checked;
+  CVEngine.save();
+  CVEngine.updateUI();
+  // Atualizar estilo do toggle
+  const knob=document.getElementById('cvToggleKnob');
+  const bg=knob?.parentElement;
+  if(CVEngine.enabled){
+    if(knob)knob.style.transform='translateX(20px)';
+    if(bg)bg.style.background='var(--green)';
+    // Pré-aquecer workers OCR em background
+    if(typeof Tesseract!=='undefined'){
+      if(!CVEngine._ocrWorker)Tesseract.createWorker('eng').then(w=>{w.setParameters({tessedit_char_whitelist:'0123456789,.'});CVEngine._ocrWorker=w;console.log('✅ OCR numeric worker ready')});
+      if(!CVEngine._ocrTextWorker)Tesseract.createWorker('eng').then(w=>{CVEngine._ocrTextWorker=w;console.log('✅ OCR text worker ready')});
+    }
+  }else{
+    if(knob)knob.style.transform='translateX(0)';
+    if(bg)bg.style.background='var(--border)';
+  }
+}
+
+// Inicializar CVEngine
+CVEngine.load();
+// Atualizar ROI status
+(function(){
+  const s=document.getElementById('cvROIStatus');
+  if(s)s.textContent=CVEngine.roiConfig?'Calibrado':'Não calibrado';
+})();
+
+function renderHistory(){
+  const list=document.getElementById('historyList');
+  if(!analysisHistory.length){list.innerHTML='<span style="color:var(--muted);font-size:.8rem">Nenhuma an\u00e1lise ainda</span>';return}
+  list.innerHTML=analysisHistory.map((h,i)=>`<div class="history-item">
+    <span class="time">${h.time}</span>
+    <div class="summary">${h.heroCards} | Board: ${h.board||'preflop'} | Equity: ${h.equity}% | ${h.suggestion}</div>
+  </div>`).join('');
+}
+</script>
+</body></html>

@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Dados locais (hand histories não vão pro repo)
+GG*.txt
+
+# Arquivos locais que não são do servidor
+dvhelper.py
+pv-server.py
+poker-vision-server.py
+poker-vision-start.bat

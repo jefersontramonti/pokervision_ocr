@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Poker Vision — Calibração de Coordenadas</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e1a;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:16px}
+h1{font-size:1.1rem;color:#fbbf24;margin-bottom:12px}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;padding:10px;background:#111827;border-radius:8px;border:1px solid #1e293b}
+.toolbar button{background:#1e293b;color:#e2e8f0;border:1px solid #334155;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:.8rem}
+.toolbar button:hover{background:#334155}
+.toolbar button.active{background:#fbbf24;color:#0a0e1a;font-weight:bold}
+.toolbar button.green{background:#22c55e;color:#0a0e1a}
+.toolbar select,.toolbar input{background:#1e293b;color:#e2e8f0;border:1px solid #334155;padding:5px 8px;border-radius:4px;font-size:.8rem}
+.container{position:relative;display:inline-block;cursor:crosshair}
+.container img{max-width:100%;display:block;border:2px solid #1e293b;border-radius:8px}
+.roi-box{position:absolute;border:2px solid;opacity:0.7;pointer-events:none;border-radius:2px}
+.roi-box.selected{opacity:1;border-width:3px}
+.roi-box .roi-label{position:absolute;top:-16px;left:0;font-size:9px;font-weight:bold;padding:1px 4px;border-radius:2px;white-space:nowrap}
+.info{margin-top:12px;padding:10px;background:#111827;border-radius:8px;border:1px solid #1e293b;font-family:monospace;font-size:.75rem;max-height:300px;overflow-y:auto}
+.info .coord{color:#fbbf24}
+.server-panel{margin-top:12px;padding:10px;background:#111827;border-radius:8px;border:1px solid #1e293b}
+.server-panel input{width:350px}
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:.7rem}
+.legend span{display:flex;align-items:center;gap:4px}
+.legend .dot{width:10px;height:10px;border-radius:2px;display:inline-block}
+.seat-btn{background:#1e293b;color:#94a3b8;border:2px solid #334155;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:.78rem;font-weight:600;transition:all .15s}
+.seat-btn:hover{background:#334155;color:#e2e8f0}
+.seat-btn.active{background:#fbbf24;color:#0a0e1a;border-color:#fbbf24}
+.seat-btn.hero{border-color:#4ade80}
+.seat-btn.hero.active{background:#4ade80;color:#0a0e1a}
+.roi-box.dimmed{opacity:0.15}
+.roi-box.highlighted{opacity:1;border-width:3px;box-shadow:0 0 8px rgba(255,255,255,0.3)}
+.roi-box .roi-label{position:absolute;top:-18px;left:0;font-size:10px;font-weight:bold;padding:2px 6px;border-radius:3px;white-space:nowrap;letter-spacing:.3px}
+</style>
+</head>
+<body>
+<h1>🎯 Calibração de Coordenadas — GGPoker 8-max</h1>
+
+<div class="toolbar">
+  <label style="font-size:.8rem">Screenshot:</label>
+  <input type="file" id="fileInput" accept="image/*" onchange="loadImage(event)">
+  <span style="color:#64748b;font-size:.75rem">ou Ctrl+V</span>
+  <span style="color:#334155">|</span>
+  <label style="font-size:.8rem">Modo:</label>
+  <button id="btnModeSeat" class="active" onclick="setMode('seat')">🪑 Por Seat</button>
+  <button id="btnModeRegion" onclick="setMode('region')">📐 Por Região</button>
+  <span style="color:#334155">|</span>
+  <button class="green" onclick="exportCoords()">💾 Exportar JSON</button>
+  <button onclick="sendToServer()">📤 Enviar ao Servidor</button>
+</div>
+
+<!-- Seat selector bar -->
+<div class="toolbar" id="seatBar" style="gap:4px">
+  <label style="font-size:.8rem;margin-right:4px">Seat:</label>
+  <button class="seat-btn active" onclick="selectSeat(-1)">🌐 Tudo</button>
+  <button class="seat-btn" onclick="selectSeat(-2)">📊 Mesa</button>
+</div>
+
+<!-- Region selector (hidden in seat mode) -->
+<div class="toolbar" id="regionBar" style="display:none">
+  <label style="font-size:.8rem">Região:</label>
+  <select id="regionSelect" onchange="selectRegion(this.value)"></select>
+  <button onclick="prevRegion()">←</button>
+  <button onclick="nextRegion()">→</button>
+</div>
+
+<div class="legend">
+  <span><span class="dot" style="background:#4ade80"></span> Cards</span>
+  <span><span class="dot" style="background:#fbbf24"></span> Name</span>
+  <span><span class="dot" style="background:#22d3ee"></span> Stack</span>
+  <span><span class="dot" style="background:#ef4444"></span> Bet</span>
+  <span><span class="dot" style="background:#f472b6"></span> Dealer</span>
+  <span><span class="dot" style="background:#a78bfa"></span> Bounty</span>
+  <span><span class="dot" style="background:#3b82f6"></span> Pot/Board</span>
+</div>
+
+<div class="container" id="container">
+  <img id="tableImg" src="" style="display:none">
+  <div id="overlays"></div>
+</div>
+
+<div class="server-panel">
+  <label style="font-size:.8rem">OCR Server URL:</label>
+  <input id="serverUrl" type="text" placeholder="https://xxx-8080.proxy.runpod.net" value="">
+  <button onclick="testServer()" style="margin-left:4px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:.8rem">🔌 Testar</button>
+  <button onclick="loadFromServer()" style="margin-left:4px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:.8rem">📥 Carregar do Servidor</button>
+  <span id="serverStatus" style="margin-left:8px;font-size:.75rem"></span>
+</div>
+
+<div class="info" id="info">
+  <p style="color:#64748b">Cole ou carregue um screenshot da mesa GGPoker.</p>
+  <p style="color:#64748b">Clique e arraste para redefinir a posição de cada região.</p>
+  <p style="color:#64748b">Use as setas ou o dropdown para navegar entre regiões.</p>
+</div>
+
+<script>
+// ── Preset GGPoker 8-max (coordenadas iniciais em fração 0-1) ──
+const SEAT_LABELS = ['HERO','↙ S2','← S3','↖ S4','↑ S5','↗ S6','→ S7','↘ S8'];
+const REGION_COLORS = {
+  name:'#fbbf24', stack:'#22d3ee', cards:'#4ade80',
+  bet:'#ef4444', dealer:'#f472b6', bounty:'#a78bfa'
+};
+
+let coords = {
+  name: 'GGPoker 8-max Bounty Hunters',
+  seats: 8,
+  blinds: {x:0.00,y:0.00,w:0.40,h:0.07},
+  pot: {x:0.33,y:0.28,w:0.34,h:0.06},
+  board: [
+    {x:0.29,y:0.33,w:0.09,h:0.19},
+    {x:0.38,y:0.33,w:0.09,h:0.19},
+    {x:0.47,y:0.33,w:0.09,h:0.19},
+    {x:0.56,y:0.33,w:0.09,h:0.19},
+    {x:0.65,y:0.33,w:0.09,h:0.19},
+  ],
+  hero_actions: {x:0.53,y:0.87,w:0.45,h:0.07},
+  seat_regions: [
+    {name:{x:0.42,y:0.87,w:0.16,h:0.04},stack:{x:0.42,y:0.91,w:0.16,h:0.05},cards:{x:0.42,y:0.70,w:0.16,h:0.17},bet:{x:0.44,y:0.65,w:0.12,h:0.04},dealer:{x:0.40,y:0.67,w:0.04,h:0.05},bounty:{x:0.45,y:0.67,w:0.10,h:0.03}},
+    {name:{x:0.14,y:0.77,w:0.15,h:0.04},stack:{x:0.14,y:0.81,w:0.15,h:0.05},cards:{x:0.12,y:0.62,w:0.14,h:0.14},bet:{x:0.22,y:0.58,w:0.10,h:0.04},dealer:{x:0.27,y:0.69,w:0.04,h:0.05},bounty:{x:0.14,y:0.61,w:0.08,h:0.03}},
+    {name:{x:0.01,y:0.53,w:0.13,h:0.04},stack:{x:0.01,y:0.57,w:0.13,h:0.05},cards:{x:0.00,y:0.37,w:0.11,h:0.14},bet:{x:0.13,y:0.53,w:0.10,h:0.04},dealer:{x:0.12,y:0.48,w:0.04,h:0.05},bounty:{x:0.02,y:0.36,w:0.08,h:0.03}},
+    {name:{x:0.16,y:0.22,w:0.16,h:0.04},stack:{x:0.16,y:0.26,w:0.16,h:0.05},cards:{x:0.16,y:0.08,w:0.14,h:0.14},bet:{x:0.28,y:0.31,w:0.10,h:0.04},dealer:{x:0.30,y:0.27,w:0.04,h:0.05},bounty:{x:0.18,y:0.06,w:0.08,h:0.03}},
+    {name:{x:0.42,y:0.12,w:0.16,h:0.04},stack:{x:0.42,y:0.16,w:0.16,h:0.05},cards:{x:0.43,y:0.00,w:0.14,h:0.12},bet:{x:0.44,y:0.22,w:0.12,h:0.04},dealer:{x:0.41,y:0.20,w:0.04,h:0.05},bounty:{x:0.47,y:0.03,w:0.08,h:0.03}},
+    {name:{x:0.68,y:0.22,w:0.18,h:0.04},stack:{x:0.68,y:0.26,w:0.18,h:0.05},cards:{x:0.72,y:0.08,w:0.14,h:0.14},bet:{x:0.62,y:0.31,w:0.10,h:0.04},dealer:{x:0.66,y:0.27,w:0.04,h:0.05},bounty:{x:0.74,y:0.06,w:0.08,h:0.03}},
+    {name:{x:0.82,y:0.53,w:0.16,h:0.04},stack:{x:0.82,y:0.57,w:0.16,h:0.05},cards:{x:0.84,y:0.37,w:0.14,h:0.14},bet:{x:0.76,y:0.53,w:0.10,h:0.04},dealer:{x:0.82,y:0.48,w:0.04,h:0.05},bounty:{x:0.86,y:0.36,w:0.08,h:0.03}},
+    {name:{x:0.72,y:0.77,w:0.16,h:0.04},stack:{x:0.72,y:0.81,w:0.16,h:0.05},cards:{x:0.74,y:0.62,w:0.14,h:0.14},bet:{x:0.65,y:0.58,w:0.10,h:0.04},dealer:{x:0.70,y:0.69,w:0.04,h:0.05},bounty:{x:0.76,y:0.61,w:0.08,h:0.03}},
+  ]
+};
+
+let allRegions = []; // [{key, path, region, label, color, seatIdx}]
+let selectedIdx = 0;
+let selectedSeat = -1; // -1=all, -2=mesa, 0-7=seat
+let viewMode = 'seat'; // 'seat' | 'region'
+let imgW = 0, imgH = 0;
+let dragging = false, dragStart = null;
+
+function buildRegionList() {
+  allRegions = [];
+  // Mesa regions (seatIdx = -2)
+  allRegions.push({key:'pot', path:'pot', region:coords.pot, label:'Pot', color:'#3b82f6', seatIdx:-2});
+  allRegions.push({key:'blinds', path:'blinds', region:coords.blinds, label:'Blinds', color:'#a78bfa', seatIdx:-2});
+  coords.board.forEach((b,i) => {
+    allRegions.push({key:`board_${i}`, path:`board.${i}`, region:b, label:`Board ${i+1}`, color:'#3b82f6', seatIdx:-2});
+  });
+  allRegions.push({key:'hero_actions', path:'hero_actions', region:coords.hero_actions, label:'Ações Hero', color:'#ef4444', seatIdx:-2});
+  // Seats
+  coords.seat_regions.forEach((seat, si) => {
+    const lbl = SEAT_LABELS[si];
+    for (const [prop, reg] of Object.entries(seat)) {
+      const c = REGION_COLORS[prop] || '#888';
+      allRegions.push({key:`s${si}_${prop}`, path:`seat_regions.${si}.${prop}`, region:reg, label:`${lbl} ${prop}`, color:c, seatIdx:si});
+    }
+  });
+  // Populate dropdown
+  const sel = document.getElementById('regionSelect');
+  sel.innerHTML = allRegions.map((r,i) => `<option value="${i}">${r.label}</option>`).join('');
+  sel.value = selectedIdx;
+  // Build seat buttons
+  buildSeatButtons();
+}
+
+function buildSeatButtons() {
+  const bar = document.getElementById('seatBar');
+  let html = '<label style="font-size:.8rem;margin-right:4px">Seat:</label>';
+  html += `<button class="seat-btn${selectedSeat===-1?' active':''}" onclick="selectSeat(-1)">🌐 Tudo</button>`;
+  html += `<button class="seat-btn${selectedSeat===-2?' active':''}" onclick="selectSeat(-2)">📊 Mesa</button>`;
+  SEAT_LABELS.forEach((lbl, i) => {
+    const isHero = i === 0;
+    html += `<button class="seat-btn${isHero?' hero':''}${selectedSeat===i?' active':''}" onclick="selectSeat(${i})">${lbl}</button>`;
+  });
+  bar.innerHTML = html;
+}
+
+function setMode(mode) {
+  viewMode = mode;
+  document.getElementById('btnModeSeat').className = mode==='seat' ? 'active' : '';
+  document.getElementById('btnModeRegion').className = mode==='region' ? 'active' : '';
+  document.getElementById('seatBar').style.display = mode==='seat' ? 'flex' : 'none';
+  document.getElementById('regionBar').style.display = mode==='region' ? 'flex' : 'none';
+  renderOverlays();
+}
+
+function selectSeat(idx) {
+  selectedSeat = idx;
+  buildSeatButtons();
+  renderOverlays();
+  // Update info
+  if (idx === -1) {
+    document.getElementById('info').innerHTML = '<p>Mostrando <strong>todas as regiões</strong> — clique num seat para focar</p>';
+  } else if (idx === -2) {
+    document.getElementById('info').innerHTML = '<p>Mostrando regiões da <strong>mesa</strong>: Pot, Board, Blinds, Ações</p>';
+  } else {
+    const seatRegions = allRegions.filter(r => r.seatIdx === idx);
+    const labels = seatRegions.map(r => `<span style="color:${r.color}">${r.label.split(' ').pop()}</span>`).join(', ');
+    document.getElementById('info').innerHTML = `<p>Seat <strong>${SEAT_LABELS[idx]}</strong> — regiões: ${labels}</p><p style="color:#64748b;font-size:.7rem">Clique e arraste para ajustar qualquer caixa deste seat</p>`;
+  }
+}
+
+function loadImage(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => setImage(ev.target.result);
+  reader.readAsDataURL(file);
+}
+
+// Ctrl+V paste
+document.addEventListener('paste', e => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      const blob = item.getAsFile();
+      const reader = new FileReader();
+      reader.onload = ev => setImage(ev.target.result);
+      reader.readAsDataURL(blob);
+      break;
+    }
+  }
+});
+
+function setImage(src) {
+  const img = document.getElementById('tableImg');
+  img.onload = () => {
+    img.style.display = 'block';
+    imgW = img.naturalWidth;
+    imgH = img.naturalHeight;
+    document.getElementById('info').innerHTML = `<p>Imagem: <span class="coord">${imgW}x${imgH}</span> — clique e arraste para ajustar a região selecionada</p>`;
+    renderOverlays();
+  };
+  img.src = src;
+}
+
+function renderOverlays() {
+  if (!imgW) return;
+  const img = document.getElementById('tableImg');
+  const dispW = img.clientWidth;
+  const dispH = img.clientHeight;
+  const overlays = document.getElementById('overlays');
+  overlays.innerHTML = '';
+
+  allRegions.forEach((r, i) => {
+    const reg = r.region;
+    // Determinar visibilidade baseado no modo
+    let isVisible = true;
+    let isHighlighted = false;
+    let isDimmed = false;
+
+    if (viewMode === 'seat') {
+      if (selectedSeat === -1) {
+        // Mostrar tudo, sem dim
+        isVisible = true;
+      } else if (selectedSeat === -2) {
+        // Mesa: destacar mesa, dimmar seats
+        isHighlighted = r.seatIdx === -2;
+        isDimmed = r.seatIdx >= 0;
+      } else {
+        // Seat específico: destacar esse seat, dimmar outros
+        isHighlighted = r.seatIdx === selectedSeat;
+        isDimmed = r.seatIdx !== selectedSeat;
+      }
+    } else {
+      // Region mode: destacar selecionado
+      isHighlighted = i === selectedIdx;
+      isDimmed = i !== selectedIdx;
+    }
+
+    const box = document.createElement('div');
+    let cls = 'roi-box';
+    if (isHighlighted) cls += ' highlighted';
+    if (isDimmed) cls += ' dimmed';
+    box.className = cls;
+    box.style.borderColor = r.color;
+    box.style.left = (reg.x * dispW) + 'px';
+    box.style.top = (reg.y * dispH) + 'px';
+    box.style.width = (reg.w * dispW) + 'px';
+    box.style.height = (reg.h * dispH) + 'px';
+
+    if (isHighlighted) {
+      box.style.background = r.color + '25';
+    }
+
+    // Label — sempre mostrar se highlighted, esconder se dimmed
+    if (!isDimmed) {
+      const label = document.createElement('div');
+      label.className = 'roi-label';
+      label.style.background = r.color;
+      label.style.color = '#000';
+      // No seat mode, mostrar só o tipo (name, stack, etc)
+      if (viewMode === 'seat' && selectedSeat >= 0) {
+        label.textContent = r.label.split(' ').pop(); // "HERO name" → "name"
+      } else {
+        label.textContent = r.label;
+      }
+      box.appendChild(label);
+    }
+
+    overlays.appendChild(box);
+  });
+}
+
+function selectRegion(idx) {
+  selectedIdx = +idx;
+  document.getElementById('regionSelect').value = idx;
+  renderOverlays();
+  const r = allRegions[selectedIdx];
+  const reg = r.region;
+  document.getElementById('info').innerHTML = `<p>Selecionado: <strong>${r.label}</strong> — <span class="coord">x=${reg.x.toFixed(3)} y=${reg.y.toFixed(3)} w=${reg.w.toFixed(3)} h=${reg.h.toFixed(3)}</span></p><p style="color:#64748b;font-size:.7rem">Clique e arraste na imagem para redefinir esta região</p>`;
+}
+
+function nextRegion() { selectRegion((selectedIdx + 1) % allRegions.length); }
+function prevRegion() { selectRegion((selectedIdx - 1 + allRegions.length) % allRegions.length); }
+
+// ── Drag to redefine region ──
+const container = document.getElementById('container');
+container.addEventListener('mousedown', e => {
+  if (!imgW) return;
+  const img = document.getElementById('tableImg');
+  const rect = img.getBoundingClientRect();
+  const fx = (e.clientX - rect.left) / img.clientWidth;
+  const fy = (e.clientY - rect.top) / img.clientHeight;
+  if (fx < 0 || fx > 1 || fy < 0 || fy > 1) return;
+
+  // Em seat mode, encontrar a região mais próxima do clique dentro do seat selecionado
+  if (viewMode === 'seat' && selectedSeat !== -1) {
+    let bestDist = Infinity, bestIdx = -1;
+    allRegions.forEach((r, i) => {
+      const match = selectedSeat === -2 ? r.seatIdx === -2 : r.seatIdx === selectedSeat;
+      if (!match) return;
+      // Centro da região
+      const cx = r.region.x + r.region.w / 2;
+      const cy = r.region.y + r.region.h / 2;
+      const dist = Math.sqrt((fx - cx) ** 2 + (fy - cy) ** 2);
+      if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+    });
+    if (bestIdx >= 0) selectedIdx = bestIdx;
+  }
+
+  dragging = true;
+  dragStart = {fx, fy};
+});
+
+document.addEventListener('mousemove', e => {
+  if (!dragging || !dragStart || !imgW) return;
+  const img = document.getElementById('tableImg');
+  const rect = img.getBoundingClientRect();
+  const fx = Math.max(0, Math.min(1, (e.clientX - rect.left) / img.clientWidth));
+  const fy = Math.max(0, Math.min(1, (e.clientY - rect.top) / img.clientHeight));
+
+  const r = allRegions[selectedIdx];
+  r.region.x = Math.min(dragStart.fx, fx);
+  r.region.y = Math.min(dragStart.fy, fy);
+  r.region.w = Math.abs(fx - dragStart.fx);
+  r.region.h = Math.abs(fy - dragStart.fy);
+  renderOverlays();
+});
+
+document.addEventListener('mouseup', e => {
+  if (!dragging) return;
+  dragging = false;
+  const r = allRegions[selectedIdx];
+  const reg = r.region;
+  // Mínimo de 0.5% para evitar região zerada
+  if (reg.w < 0.005 || reg.h < 0.005) { dragStart = null; return; }
+  // Atualizar coords original
+  setNestedValue(coords, r.path, {...reg});
+  document.getElementById('info').innerHTML = `<p>✅ <strong style="color:${r.color}">${r.label}</strong> atualizado: <span class="coord">x=${reg.x.toFixed(3)} y=${reg.y.toFixed(3)} w=${reg.w.toFixed(3)} h=${reg.h.toFixed(3)}</span></p>`;
+  dragStart = null;
+  renderOverlays();
+});
+
+// Keyboard navigation
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'ArrowRight' || e.key === 'Tab') { e.preventDefault(); nextRegion(); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); prevRegion(); }
+});
+
+function setNestedValue(obj, path, value) {
+  const parts = path.split('.');
+  let curr = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const key = isNaN(parts[i]) ? parts[i] : +parts[i];
+    curr = curr[key];
+  }
+  const lastKey = isNaN(parts[parts.length-1]) ? parts[parts.length-1] : +parts[parts.length-1];
+  curr[lastKey] = value;
+}
+
+// ── Export / Server ──
+function exportCoords() {
+  const json = JSON.stringify(coords, null, 2);
+  const blob = new Blob([json], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'ggpoker-coords.json'; a.click();
+  URL.revokeObjectURL(url);
+  document.getElementById('info').innerHTML = '<p style="color:#22c55e">✅ Arquivo ggpoker-coords.json exportado!</p>';
+}
+
+async function sendToServer() {
+  const url = document.getElementById('serverUrl').value.trim();
+  if (!url) { alert('Preencha a URL do servidor'); return; }
+  try {
+    const resp = await fetch(url + '/update-coords', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(coords)
+    });
+    const data = await resp.json();
+    document.getElementById('serverStatus').innerHTML = `<span style="color:#22c55e">✅ ${data.message || 'Enviado!'}</span>`;
+  } catch (e) {
+    document.getElementById('serverStatus').innerHTML = `<span style="color:#ef4444">❌ Erro: ${e.message}</span>`;
+  }
+}
+
+async function testServer() {
+  const url = document.getElementById('serverUrl').value.trim();
+  if (!url) return;
+  try {
+    const resp = await fetch(url + '/health', {signal: AbortSignal.timeout(3000)});
+    const data = await resp.json();
+    document.getElementById('serverStatus').innerHTML = `<span style="color:#22c55e">✅ ${data.ocr_engine || 'OK'} — ${data.preset || ''}</span>`;
+  } catch (e) {
+    document.getElementById('serverStatus').innerHTML = `<span style="color:#ef4444">❌ Offline</span>`;
+  }
+}
+
+async function loadFromServer() {
+  const url = document.getElementById('serverUrl').value.trim();
+  if (!url) return;
+  try {
+    const resp = await fetch(url + '/get-coords');
+    coords = await resp.json();
+    buildRegionList();
+    renderOverlays();
+    document.getElementById('info').innerHTML = '<p style="color:#22c55e">✅ Coordenadas carregadas do servidor</p>';
+  } catch (e) {
+    document.getElementById('serverStatus').innerHTML = `<span style="color:#ef4444">❌ Erro: ${e.message}</span>`;
+  }
+}
+
+// Load saved server URL
+const savedUrl = localStorage.getItem('poker_vision_ocr_server');
+if (savedUrl) document.getElementById('serverUrl').value = savedUrl;
+
+// Init
+buildRegionList();
+selectRegion(0);
+</script>
+</body>
+</html>
