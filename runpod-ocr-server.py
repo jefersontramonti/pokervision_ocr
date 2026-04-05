@@ -16,6 +16,8 @@ import json
 import time
 import base64
 import io
+import torch
+torch.backends.cudnn.enabled = False  # compatibilidade cu124 no RunPod
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from PIL import Image
@@ -32,8 +34,6 @@ def get_ocr():
         print("🔄 Carregando Chandra OCR 2 (4B)... isso leva ~30s na primeira vez")
         t0 = time.time()
         try:
-            import torch
-            torch.backends.cudnn.enabled = False
             from chandra.model import InferenceManager
             from chandra.model.schema import BatchInputItem
 
@@ -717,7 +717,7 @@ def ocr_test():
 @app.route('/presets', methods=['GET'])
 def list_presets():
     """Listar presets disponíveis"""
-    return jsonify({k: {'name': v['name'], 'seats': v['seats'], 'resolution': v['resolution']}
+    return jsonify({k: {'name': v['name'], 'seats': v['seats']}
                     for k, v in PRESETS.items()})
 
 
