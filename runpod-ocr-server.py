@@ -215,6 +215,52 @@ def parse_card_text(text):
     return ''
 
 
+def parse_two_cards(text):
+    """
+    Extrai duas cartas de um texto OCR que contém ambas as cartas do hero.
+    Ex: '5♥ 4♥' → ('5h', '4h')
+        '5 4'    → ('5?', '4?') tentativa sem naipe
+    Retorna tupla (card1, card2).
+    """
+    if not text:
+        return '', ''
+
+    suit_map = {
+        '♠': 's', '♤': 's', 's': 's', 'S': 's',
+        '♥': 'h', '♡': 'h', 'h': 'h', 'H': 'h',
+        '♦': 'd', '♢': 'd', 'd': 'd', 'D': 'd',
+        '♣': 'c', '♧': 'c', 'c': 'c', 'C': 'c',
+    }
+    ranks = 'AKQJT98765432'
+    t = text.replace('10', 'T').strip()
+
+    cards = []
+    i = 0
+    while i < len(t) and len(cards) < 2:
+        ch = t[i].upper()
+        if ch in ranks:
+            rank = ch
+            suit = ''
+            # Procura naipe imediatamente depois do rank (pode ser unicode ou letra)
+            for j in range(i + 1, min(i + 4, len(t))):
+                candidate = t[j]
+                if candidate in suit_map:
+                    suit = suit_map[candidate]
+                    i = j
+                    break
+                elif candidate.upper() in suit_map:
+                    suit = suit_map[candidate.upper()]
+                    i = j
+                    break
+            if suit:
+                cards.append(rank + suit)
+        i += 1
+
+    c1 = cards[0] if len(cards) > 0 else ''
+    c2 = cards[1] if len(cards) > 1 else ''
+    return c1, c2
+
+
 def detect_seat_active(img_pil, region, is_hero=False):
     """
     Detecta se um seat tem cartas visíveis.
@@ -470,63 +516,81 @@ def save_coords(coords):
 
 def build_labeled_mosaic(regions):
     """
-    Constrói mosaico vertical com cada crop precedido por um label de texto.
-    Formato por item:
-      ┌──────────────────────────┐  ← faixa cinza com "[LABEL]"
-      │  crop redimensionado     │  ← imagem da região
-      └──────────────────────────┘
-
-    O Chandra OCR lê top-to-bottom e retorna:
-      [LABEL]
-      <texto do crop>
-      [PRÓXIMO LABEL]
-      ...
-
-    regions: list of (label_str, PIL.Image)
-    Retorna: PIL.Image (mosaico pronto para OCR)
+    Constrói mosaico vertical com cada crop precedido por label.
+    Cada item tem altura proporcional ao crop (cartas recebem mais espaço).
+    Chandra retorna HTML: <tr><td>[LABEL]</td><td>VALOR</td></tr>
     """
     from PIL import ImageDraw
 
-    LABEL_H  = 22    # altura da faixa de label (px)
-    CROP_H   = 60    # altura de cada crop no mosaico
-    MOSAIC_W = 220   # largura total
-    GAP      = 4     # espaço entre itens
+    LABEL_H  = 22    # altura da faixa de label
+    MOSAIC_W = 280   # largura total (mais largo = mais detalhe nas cartas)
+    GAP      = 6     # espaço entre itens
 
-    total_h = len(regions) * (LABEL_H + CROP_H + GAP)
-    mosaic = Image.new('RGB', (MOSAIC_W, total_h), (255, 255, 255))
-    draw = ImageDraw.Draw(mosaic)
+    # Altura de cada crop: cartas recebem mais espaço para preservar naipes
+    def crop_h(label):
+        if label.startswith('HC') or label.startswith('BD'):
+            return 110   # cartas precisam de altura para o símbolo do naipe
+        return 55        # números (pot, stack, nome) precisam menos
 
-    for idx, (label, crop) in enumerate(regions):
-        y0 = idx * (LABEL_H + CROP_H + GAP)
+    total_h = sum(LABEL_H + crop_h(lbl) + GAP for lbl, _ in regions)
+    mosaic  = Image.new('RGB', (MOSAIC_W, total_h), (255, 255, 255))
+    draw    = ImageDraw.Draw(mosaic)
+
+    y = 0
+    for label, crop in regions:
+        ch = crop_h(label)
 
         # Faixa cinza com label
-        draw.rectangle([(0, y0), (MOSAIC_W, y0 + LABEL_H - 1)], fill=(210, 210, 210))
-        draw.text((4, y0 + 3), f'[{label}]', fill=(0, 0, 0))
+        draw.rectangle([(0, y), (MOSAIC_W, y + LABEL_H - 1)], fill=(200, 200, 200))
+        draw.text((4, y + 4), f'[{label}]', fill=(0, 0, 0))
 
-        # Crop redimensionado
-        resized = crop.resize((MOSAIC_W, CROP_H), Image.LANCZOS)
-        mosaic.paste(resized, (0, y0 + LABEL_H))
+        # Crop: manter proporção ao redimensionar (não esmagar)
+        cw_orig, ch_orig = crop.size
+        scale  = min(MOSAIC_W / max(cw_orig, 1), ch / max(ch_orig, 1))
+        nw, nh = max(1, int(cw_orig * scale)), max(1, int(ch_orig * scale))
+        resized = crop.resize((nw, nh), Image.LANCZOS)
+        # Centralizar no espaço disponível
+        x_off = (MOSAIC_W - nw) // 2
+        y_off = y + LABEL_H + (ch - nh) // 2
+        mosaic.paste(resized, (x_off, y_off))
+
+        y += LABEL_H + ch + GAP
 
     return mosaic
 
 
 def parse_mosaic_text(ocr_text, labels):
     """
-    Parseia texto OCR do mosaico, extraindo o valor de cada label.
-    Retorna dict: {label: raw_text_value}
+    Parseia o texto OCR do mosaico.
+    Chandra retorna HTML table: <tr><td>[LABEL]</td><td>VALOR</td></tr>
+    Também suporta formato texto simples como fallback.
+    Retorna dict: {label: valor_limpo}
     """
     result = {}
-    # Normalizar: remover artefatos comuns do OCR nos labels
-    text = ocr_text
 
+    # ── Formato HTML (Chandra interpreta mosaico como tabela) ──
+    if '<tr>' in ocr_text or '<td>' in ocr_text:
+        for m in re.finditer(
+            r'<tr>\s*<td>\s*\[([^\]]+)\]\s*</td>\s*<td>(.*?)</td>\s*</tr>',
+            ocr_text, re.DOTALL | re.IGNORECASE
+        ):
+            result[m.group(1).strip()] = re.sub(r'<[^>]+>', '', m.group(2)).strip()
+        if result:
+            return result
+        # Às vezes sem espaços: <tr><td>[X]</td><td>val</td></tr>
+        for m in re.finditer(r'<td>\[([^\]]+)\]</td><td>([^<]*)</td>', ocr_text, re.IGNORECASE):
+            result[m.group(1).strip()] = m.group(2).strip()
+        if result:
+            return result
+
+    # ── Formato texto simples [LABEL] valor ──
     for i, label in enumerate(labels):
-        # Padrão: [LABEL] seguido de conteúdo até o próximo [LABEL] ou fim
         next_label = labels[i + 1] if i + 1 < len(labels) else None
         if next_label:
             pat = r'\[' + re.escape(label) + r'\]\s*(.*?)\s*(?=\[' + re.escape(next_label) + r'\])'
         else:
             pat = r'\[' + re.escape(label) + r'\]\s*(.*?)$'
-        m = re.search(pat, text, re.DOTALL | re.IGNORECASE)
+        m = re.search(pat, ocr_text, re.DOTALL | re.IGNORECASE)
         result[label] = m.group(1).strip() if m else ''
 
     return result
@@ -597,13 +661,9 @@ def analyze_table_mosaic(img_pil):
             continue
         if _valid_region(sr.get('stack')):
             add(f'ST{i}', crop_region(img_pil, sr['stack']), 'stack', i)
-        # Cartas do hero apenas (vilões = verso fechado)
+        # Cartas do hero: manda as 2 juntas em 1 crop (mais contexto para OCR)
         if i == 0 and _valid_region(sr.get('cards')):
-            cr   = sr['cards']
-            hw   = cr['w'] / 2
-            add('HC1', crop_region(img_pil, {**cr, 'w': hw}), 'card1', 0)
-            add('HC2', crop_region(img_pil, {'x': cr['x']+hw, 'y': cr['y'],
-                                             'w': hw, 'h': cr['h']}), 'card2', 0)
+            add('HCC', crop_region(img_pil, sr['cards']), 'cards', 0)
         # Nomes para todos os ativos
         if _valid_region(sr.get('name')):
             add(f'NM{i}', crop_region(img_pil, sr['name']), 'name', i)
@@ -665,8 +725,9 @@ def analyze_table_mosaic(img_pil):
 
         name  = parsed.get(f'NM{i}', '').strip() or ('Hero' if is_hero else f'Player{seat_num}')
         stack = parse_number(parsed.get(f'ST{i}', ''))
-        c1    = parse_card_text(parsed.get('HC1', '')) if is_hero else ''
-        c2    = parse_card_text(parsed.get('HC2', '')) if is_hero else ''
+        # HCC = ambas as cartas do hero em um crop só
+        hcc_text = parsed.get('HCC', '') if is_hero else ''
+        c1, c2 = parse_two_cards(hcc_text) if is_hero else ('', '')
 
         # Detectar sit-out
         if 'sitting' in name.lower() or 'sit out' in name.lower():
