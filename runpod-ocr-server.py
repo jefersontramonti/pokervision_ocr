@@ -468,194 +468,249 @@ def save_coords(coords):
 
 # ============ ANÁLISE COMPLETA ============
 
-VLM_PROMPT = """You are analyzing a GGPoker 8-max poker table screenshot.
-Extract all visible game data and return ONLY a valid JSON object. No explanation, no markdown.
-
-{
-  "pot": <number or 0>,
-  "board": ["Ah","Ks","2d"],
-  "dealer_id": "<seat_id where D button is visible, or empty string>",
-  "seats": [
-    {
-      "id": "<seat_id>",
-      "name": "<player name or empty>",
-      "stack": <number or 0>,
-      "active": <true if player has cards in hand, false if folded or empty>,
-      "cards": ["Ah","Ks"],
-      "bet": <number or 0>
-    }
-  ]
-}
-
-Seat IDs (fixed positions on table):
-- bottom_center = HERO (bottom center)
-- bottom_left   = bottom left
-- left          = left side
-- top_left      = top left
-- top           = top center
-- top_right     = top right
-- right         = right side
-- bottom_right  = bottom right
-
-Card format: rank + suit letter. Examples: Ah=Ace hearts, Ks=King spades, Td=Ten diamonds, 2c=2 clubs.
-Include ALL 8 seats. active=true only if player still has cards (not folded, not empty seat).
-Hero cards are face-up (visible). Villain cards are face-down (red backs) — leave cards=[] for villains.
-Return ONLY the JSON object."""
-
-
-def analyze_table_vlm(img_pil):
+def build_labeled_mosaic(regions):
     """
-    Analisa mesa inteira com UMA única chamada VLM.
-    Envia a imagem completa com prompt estruturado → recebe JSON com todos os dados.
+    Constrói mosaico vertical com cada crop precedido por um label de texto.
+    Formato por item:
+      ┌──────────────────────────┐  ← faixa cinza com "[LABEL]"
+      │  crop redimensionado     │  ← imagem da região
+      └──────────────────────────┘
+
+    O Chandra OCR lê top-to-bottom e retorna:
+      [LABEL]
+      <texto do crop>
+      [PRÓXIMO LABEL]
+      ...
+
+    regions: list of (label_str, PIL.Image)
+    Retorna: PIL.Image (mosaico pronto para OCR)
+    """
+    from PIL import ImageDraw
+
+    LABEL_H  = 22    # altura da faixa de label (px)
+    CROP_H   = 60    # altura de cada crop no mosaico
+    MOSAIC_W = 220   # largura total
+    GAP      = 4     # espaço entre itens
+
+    total_h = len(regions) * (LABEL_H + CROP_H + GAP)
+    mosaic = Image.new('RGB', (MOSAIC_W, total_h), (255, 255, 255))
+    draw = ImageDraw.Draw(mosaic)
+
+    for idx, (label, crop) in enumerate(regions):
+        y0 = idx * (LABEL_H + CROP_H + GAP)
+
+        # Faixa cinza com label
+        draw.rectangle([(0, y0), (MOSAIC_W, y0 + LABEL_H - 1)], fill=(210, 210, 210))
+        draw.text((4, y0 + 3), f'[{label}]', fill=(0, 0, 0))
+
+        # Crop redimensionado
+        resized = crop.resize((MOSAIC_W, CROP_H), Image.LANCZOS)
+        mosaic.paste(resized, (0, y0 + LABEL_H))
+
+    return mosaic
+
+
+def parse_mosaic_text(ocr_text, labels):
+    """
+    Parseia texto OCR do mosaico, extraindo o valor de cada label.
+    Retorna dict: {label: raw_text_value}
+    """
+    result = {}
+    # Normalizar: remover artefatos comuns do OCR nos labels
+    text = ocr_text
+
+    for i, label in enumerate(labels):
+        # Padrão: [LABEL] seguido de conteúdo até o próximo [LABEL] ou fim
+        next_label = labels[i + 1] if i + 1 < len(labels) else None
+        if next_label:
+            pat = r'\[' + re.escape(label) + r'\]\s*(.*?)\s*(?=\[' + re.escape(next_label) + r'\])'
+        else:
+            pat = r'\[' + re.escape(label) + r'\]\s*(.*?)$'
+        m = re.search(pat, text, re.DOTALL | re.IGNORECASE)
+        result[label] = m.group(1).strip() if m else ''
+
+    return result
+
+
+def analyze_table_mosaic(img_pil):
+    """
+    Análise via MOSAICO ROTULADO — uma única chamada OCR.
+
+    Fluxo:
+      1. Detecção visual (dealer button, seats ativos) — sem OCR, rápido
+      2. Recorta regiões importantes (pot, board, hero cards, stacks)
+      3. Monta UM mosaico vertical com labels [POT], [BOARD1], [STACK0]…
+      4. UMA chamada Chandra OCR — lê todo o mosaico de uma vez
+      5. Parseia texto por label → monta resposta estruturada
+
+    ~3-5s esperado (vs 228s do batch original)
     """
     manager = get_ocr_manager()
     if not manager or not _BatchInputItem:
         return None, {}
 
+    coords   = active_coords or load_coords()
+    num_seats   = int(coords.get('seats', 8))
+    seat_regions = coords.get('seat_regions', [])
     t0 = time.time()
     timings = {}
 
-    coords = active_coords or load_coords()
-    num_seats = int(coords.get('seats', 8))
-    seat_regions = coords.get('seat_regions', [])
-
-    # ── Fase 1: Dealer detection (visual, sem OCR) ──
+    # ── FASE 1: Dealer (visual, zero OCR) ──────────────────────────
     t1 = time.time()
     dealer_regions = [s.get('dealer') for s in seat_regions]
-    btn_seat_idx = detect_dealer_position(img_pil, dealer_regions)
+    btn_seat_idx   = detect_dealer_position(img_pil, dealer_regions)
     timings['dealer'] = f"{(time.time()-t1)*1000:.0f}ms"
-    print(f"  Dealer visual: seat_idx={btn_seat_idx}")
+    print(f"  Dealer visual: idx={btn_seat_idx}")
 
-    # ── Fase 2: UMA chamada VLM com imagem completa ──
+    # ── FASE 2: Seats ativos (pixel, zero OCR) ─────────────────────
     t1 = time.time()
-    raw_text = ''
-    vlm_data = None
+    seat_active = []
+    for i, sr in enumerate(seat_regions):
+        active = True
+        if _valid_region(sr.get('cards')):
+            active = detect_seat_active(img_pil, sr['cards'], is_hero=(i == 0))
+        seat_active.append(active)
+        print(f"  [{sr.get('id','?')}] active={active}")
+    timings['detect'] = f"{(time.time()-t1)*1000:.0f}ms"
 
+    # ── FASE 3: Montar regiões para o mosaico ──────────────────────
+    t1 = time.time()
+    mosaic_items = []   # (label, PIL crop)
+    label_map    = {}   # label → (tipo, seat_idx)
+
+    def add(label, crop, tipo, idx=0):
+        mosaic_items.append((label, crop))
+        label_map[label] = (tipo, idx)
+
+    # Pot
+    if _valid_region(coords.get('pot')):
+        add('POT', crop_region(img_pil, coords['pot']), 'pot')
+
+    # Board cards
+    for i, r in enumerate(coords.get('board', [])):
+        if _valid_region(r) and detect_seat_active(img_pil, r, is_hero=True):
+            add(f'BD{i+1}', crop_region(img_pil, r), 'board', i)
+
+    # Stacks de todos os seats ativos + hero cards
+    for i, sr in enumerate(seat_regions):
+        if not seat_active[i]:
+            continue
+        if _valid_region(sr.get('stack')):
+            add(f'ST{i}', crop_region(img_pil, sr['stack']), 'stack', i)
+        # Cartas do hero apenas (vilões = verso fechado)
+        if i == 0 and _valid_region(sr.get('cards')):
+            cr   = sr['cards']
+            hw   = cr['w'] / 2
+            add('HC1', crop_region(img_pil, {**cr, 'w': hw}), 'card1', 0)
+            add('HC2', crop_region(img_pil, {'x': cr['x']+hw, 'y': cr['y'],
+                                             'w': hw, 'h': cr['h']}), 'card2', 0)
+        # Nomes para todos os ativos
+        if _valid_region(sr.get('name')):
+            add(f'NM{i}', crop_region(img_pil, sr['name']), 'name', i)
+
+    timings['crop'] = f"{(time.time()-t1)*1000:.0f}ms"
+    print(f"  Mosaico: {len(mosaic_items)} itens")
+
+    if not mosaic_items:
+        print("  ⚠️  Nenhuma região válida para OCR")
+        return _empty_result(seat_regions, btn_seat_idx, timings, t0)
+
+    # ── FASE 4: UMA chamada OCR no mosaico inteiro ─────────────────
+    t1 = time.time()
+    mosaic_img = build_labeled_mosaic(mosaic_items)
     try:
-        item = _BatchInputItem(image=img_pil, prompt=VLM_PROMPT, prompt_type="chat")
-        results = manager.generate([item])
-        raw_text = (results[0].raw or results[0].markdown or '').strip()
+        results    = manager.generate([_BatchInputItem(image=mosaic_img, prompt_type="ocr")])
+        ocr_text   = (results[0].markdown or results[0].raw or '').strip()
     except Exception as e:
-        print(f"  VLM chat falhou ({e}), tentando prompt_type=ocr...")
-        try:
-            item = _BatchInputItem(image=img_pil, prompt_type="ocr")
-            results = manager.generate([item])
-            raw_text = (results[0].raw or results[0].markdown or '').strip()
-        except Exception as e2:
-            print(f"  VLM ocr também falhou: {e2}")
+        print(f"  OCR mosaico falhou: {e}")
+        ocr_text = ''
+    timings['ocr'] = f"{(time.time()-t1)*1000:.0f}ms"
+    print(f"  OCR mosaico ({len(ocr_text)} chars):\n{ocr_text[:400]}")
 
-    timings['vlm'] = f"{(time.time()-t1)*1000:.0f}ms"
-    print(f"  VLM response ({len(raw_text)} chars): {raw_text[:200]}")
-
-    # ── Fase 3: Parse JSON da resposta ──
+    # ── FASE 5: Parse por label ────────────────────────────────────
     t1 = time.time()
-    raw_text_clean = re.sub(r'```(?:json)?\n?', '', raw_text).strip()
-    json_match = re.search(r'\{[\s\S]*\}', raw_text_clean)
-    if json_match:
-        try:
-            vlm_data = json.loads(json_match.group())
-        except json.JSONDecodeError as e:
-            print(f"  JSON parse error: {e}")
+    labels   = [lbl for lbl, _ in mosaic_items]
+    parsed   = parse_mosaic_text(ocr_text, labels)
 
-    timings['parse'] = f"{(time.time()-t1)*1000:.0f}ms"
-
-    # ── Fase 4: Montar resultado no formato padrão ──
+    # Montar table
+    pos_map  = POS_MAPS.get(num_seats, POS_MAPS[8])
     table = {
         'pot': 0, 'board': [], 'street': 'preflop',
         'blinds': '', 'btn_seat': btn_seat_idx + 1 if btn_seat_idx >= 0 else -1,
         'num_active': 0, 'last_action': '', 'bet_to_call': 0,
         'tournament': True,
-        'vlm_raw': raw_text[:500],  # debug: resposta bruta
+        'ocr_raw': ocr_text[:600],  # debug
     }
-    seats = []
 
-    if vlm_data:
-        # Pot
-        table['pot'] = parse_number(str(vlm_data.get('pot', 0)))
+    if 'POT' in parsed:
+        table['pot'] = parse_number(parsed['POT'])
 
-        # Board
-        for c in vlm_data.get('board', []):
-            card = parse_card_text(str(c))
+    for lbl, val in parsed.items():
+        if lbl.startswith('BD'):
+            card = parse_card_text(val)
             if card:
                 table['board'].append(card)
-        n_board = len(table['board'])
-        table['street'] = {0:'preflop', 3:'flop', 4:'turn', 5:'river'}.get(n_board, 'preflop')
 
-        # Dealer via VLM (se visual falhou)
-        if btn_seat_idx < 0:
-            dealer_id = vlm_data.get('dealer_id', '')
-            for i, sr in enumerate(seat_regions):
-                if sr.get('id') == dealer_id:
-                    btn_seat_idx = i
-                    table['btn_seat'] = i + 1
-                    break
+    n_board = len(table['board'])
+    table['street'] = {0:'preflop', 3:'flop', 4:'turn', 5:'river'}.get(n_board, 'preflop')
 
-        # Seats
-        pos_map = POS_MAPS.get(num_seats, POS_MAPS[8])
-        vlm_seats_by_id = {s['id']: s for s in vlm_data.get('seats', []) if 'id' in s}
+    # Montar seats
+    seats = []
+    for i, sr in enumerate(seat_regions):
+        seat_num  = i + 1
+        is_hero   = (i == 0)
+        phys_id   = sr.get('id',    f'seat_{seat_num}')
+        phys_label= sr.get('label', f'Seat {seat_num}')
+        active    = seat_active[i]
 
-        for i, sr in enumerate(seat_regions):
-            seat_num = i + 1
-            is_hero = (i == 0)
-            phys_id = sr.get('id', f'seat_{seat_num}')
-            phys_label = sr.get('label', f'Seat {seat_num}')
-            vs = vlm_seats_by_id.get(phys_id, {})
+        name  = parsed.get(f'NM{i}', '').strip() or ('Hero' if is_hero else f'Player{seat_num}')
+        stack = parse_number(parsed.get(f'ST{i}', ''))
+        c1    = parse_card_text(parsed.get('HC1', '')) if is_hero else ''
+        c2    = parse_card_text(parsed.get('HC2', '')) if is_hero else ''
 
-            active = bool(vs.get('active', False))
-            seat = {
-                'seat': seat_num,
-                'id': phys_id,
-                'label': phys_label,
-                'name': vs.get('name', '') or ('Hero' if is_hero else f'Player{seat_num}'),
-                'stack': parse_number(str(vs.get('stack', 0))),
-                'cards': [parse_card_text(str(c)) for c in vs.get('cards', [])][:2],
-                'position': '?',
-                'bet': parse_number(str(vs.get('bet', 0))),
-                'bounty': '',
-                'is_hero': is_hero,
-                'active': active,
-                'action': '',
-            }
-            # Garante 2 elementos em cards
-            while len(seat['cards']) < 2:
-                seat['cards'].append('')
+        # Detectar sit-out
+        if 'sitting' in name.lower() or 'sit out' in name.lower():
+            active = False
 
-            if btn_seat_idx >= 0:
-                seat['position'] = pos_map[(num_seats - btn_seat_idx + i) % num_seats]
-
-            seats.append(seat)
-
-        # Ações
-        active_seats = [s for s in seats if s['active']]
-        table['num_active'] = len(active_seats)
-        max_bet = max((s['bet'] for s in active_seats), default=0)
-        if max_bet > 0 and math.isfinite(max_bet):
-            bettor = next((s for s in active_seats if s['bet'] == max_bet), None)
-            table['last_action'] = f"Bet {int(max_bet):,}"
-            table['bet_to_call'] = max_bet
-            if bettor:
-                bettor['action'] = f"Bet {int(max_bet):,}"
-
-        # Ordenar por posição
+        position = '?'
         if btn_seat_idx >= 0:
-            for s in seats:
-                s['_po'] = pos_map.index(s['position']) if s['position'] in pos_map else 99
-            seats.sort(key=lambda s: s['_po'])
-            for s in seats:
-                s.pop('_po', None)
-    else:
-        # VLM não retornou JSON válido — seats vazios com erro
-        print("  ⚠️  VLM não retornou JSON válido")
-        for i, sr in enumerate(seat_regions):
-            seats.append({
-                'seat': i+1, 'id': sr.get('id',''), 'label': sr.get('label',''),
-                'name': '', 'stack': 0, 'cards': ['',''], 'position': '?',
-                'bet': 0, 'bounty': '', 'is_hero': i==0, 'active': False, 'action': '',
-            })
+            position = pos_map[(num_seats - btn_seat_idx + i) % num_seats]
 
+        seats.append({
+            'seat': seat_num, 'id': phys_id, 'label': phys_label,
+            'name': name, 'stack': stack, 'cards': [c1, c2],
+            'position': position, 'bet': 0, 'bounty': '',
+            'is_hero': is_hero, 'active': active, 'action': '',
+        })
+
+    active_seats      = [s for s in seats if s['active']]
+    table['num_active'] = len(active_seats)
+
+    # Ordenar por posição
+    if btn_seat_idx >= 0:
+        for s in seats:
+            s['_po'] = pos_map.index(s['position']) if s['position'] in pos_map else 99
+        seats.sort(key=lambda s: s['_po'])
+        for s in seats: s.pop('_po', None)
+
+    timings['parse'] = f"{(time.time()-t1)*1000:.0f}ms"
     elapsed = time.time() - t0
-    print(f"\n✅ VLM análise em {elapsed:.1f}s | Board: {table['board']} | Pot: {table['pot']}")
+    print(f"\n✅ Mosaico análise em {elapsed:.1f}s | Board: {table['board']} | Pot: {table['pot']}")
+    for s in seats:
+        if s['active']:
+            print(f"  [{s['id']:13s}] {s['position']:6s} {s['name']:15s} stack={s['stack']} cards={s['cards']}")
     return {'table': table, 'seats': seats, 'timings': timings}, elapsed
+
+
+def _empty_result(seat_regions, btn_seat_idx, timings, t0):
+    seats = [{'seat': i+1, 'id': sr.get('id',''), 'label': sr.get('label',''),
+               'name': '', 'stack': 0, 'cards': ['',''], 'position': '?',
+               'bet': 0, 'bounty': '', 'is_hero': i==0, 'active': False, 'action': ''}
+             for i, sr in enumerate(seat_regions)]
+    table = {'pot': 0, 'board': [], 'street': 'preflop', 'blinds': '',
+             'btn_seat': btn_seat_idx+1 if btn_seat_idx >= 0 else -1,
+             'num_active': 0, 'last_action': '', 'bet_to_call': 0, 'tournament': True}
+    return {'table': table, 'seats': seats, 'timings': timings}, time.time() - t0
 
 
 def analyze_table(img_pil):
@@ -977,13 +1032,13 @@ def analyze():
     print(f"\n{'='*60}")
     print(f"📸 Nova análise — imagem {img_pil.size[0]}x{img_pil.size[1]}")
 
-    # Usar VLM single-call por padrão (muito mais rápido)
-    # Fallback para batch OCR se o caller pedir explicitamente
+    # Mosaico rotulado: 1 imagem → 1 OCR call → todos os dados
+    # use_batch=true força o modo antigo (24 crops separados)
     use_batch = data.get('use_batch', False)
     if use_batch:
         analysis, elapsed = analyze_table(img_pil)
     else:
-        analysis, elapsed = analyze_table_vlm(img_pil)
+        analysis, elapsed = analyze_table_mosaic(img_pil)
 
     # Override dealer se frontend enviou manualmente
     if 'btn_seat_idx' in data and data['btn_seat_idx'] >= 0:
