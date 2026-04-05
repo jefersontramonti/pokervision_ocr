@@ -551,7 +551,8 @@ def analyze_table(img_pil):
             batch_images.append(crop_region(img_pil, sr['stack']))
             batch_keys.append(('stack', i))
 
-        if _valid_region(sr.get('cards')):
+        # Cartas: apenas Hero (villain cards são verso fechado, OCR inútil)
+        if (i == 0) and _valid_region(sr.get('cards')):
             cr = sr['cards']
             half_w = cr['w'] / 2
             c1_r = {'x': cr['x'], 'y': cr['y'], 'w': half_w, 'h': cr['h']}
