@@ -217,47 +217,67 @@ def parse_card_text(text):
 
 def parse_two_cards(text):
     """
-    Extrai duas cartas de um texto OCR que contém ambas as cartas do hero.
-    Ex: '5♥ 4♥' → ('5h', '4h')
-        '5 4'    → ('5?', '4?') tentativa sem naipe
-    Retorna tupla (card1, card2).
+    Extrai duas cartas do hero de texto OCR.
+    Suporta 3 formatos que o Chandra pode retornar:
+      1. Inglês:   "Jack of Diamonds and 6 of Clubs"  → ('Jd', '6c')
+      2. Símbolos: "J♦ 6♣"                            → ('Jd', '6c')
+      3. Letras:   "Jd 6c"                            → ('Jd', '6c')
     """
     if not text:
         return '', ''
 
-    suit_map = {
-        '♠': 's', '♤': 's', 's': 's', 'S': 's',
-        '♥': 'h', '♡': 'h', 'h': 'h', 'H': 'h',
-        '♦': 'd', '♢': 'd', 'd': 'd', 'D': 'd',
-        '♣': 'c', '♧': 'c', 'c': 'c', 'C': 'c',
+    # ── 1. Descrição em inglês (Chandra descreve a imagem da carta) ──
+    rank_en = {
+        'ace':'A','king':'K','queen':'Q','jack':'J','ten':'T',
+        'nine':'9','eight':'8','seven':'7','six':'6','five':'5',
+        'four':'4','three':'3','two':'2',
     }
-    ranks = 'AKQJT98765432'
-    t = text.replace('10', 'T').strip()
+    suit_en = {
+        'spades':'s','spade':'s','hearts':'h','heart':'h',
+        'diamonds':'d','diamond':'d','clubs':'c','club':'c',
+    }
+    cards_en = []
+    tl = text.lower()
+    for m in re.finditer(
+        r'(ace|king|queen|jack|ten|nine|eight|seven|six|five|four|three|two|\d+)'
+        r'\s+of\s+(spades?|hearts?|diamonds?|clubs?)',
+        tl
+    ):
+        rank_raw, suit_raw = m.group(1), m.group(2)
+        rank = rank_en.get(rank_raw) or ('T' if rank_raw == '10' else rank_raw if rank_raw.isdigit() else '')
+        suit = suit_en.get(suit_raw, '')
+        if rank and suit:
+            cards_en.append(rank + suit)
+        if len(cards_en) == 2:
+            break
+    if len(cards_en) >= 2:
+        return cards_en[0], cards_en[1]
 
-    cards = []
+    # ── 2. Símbolos unicode ou letras (5♥ 4♥  /  Jd 6c) ──
+    suit_map = {
+        '♠':'s','♤':'s','♥':'h','♡':'h','♦':'d','♢':'d','♣':'c','♧':'c',
+        's':'s','h':'h','d':'d','c':'c',
+    }
+    ranks = set('AKQJT98765432')
+    t = text.replace('10', 'T').strip()
+    cards_sym = []
     i = 0
-    while i < len(t) and len(cards) < 2:
+    while i < len(t) and len(cards_sym) < 2:
         ch = t[i].upper()
         if ch in ranks:
-            rank = ch
             suit = ''
-            # Procura naipe imediatamente depois do rank (pode ser unicode ou letra)
-            for j in range(i + 1, min(i + 4, len(t))):
-                candidate = t[j]
-                if candidate in suit_map:
-                    suit = suit_map[candidate]
-                    i = j
-                    break
-                elif candidate.upper() in suit_map:
-                    suit = suit_map[candidate.upper()]
-                    i = j
-                    break
+            for j in range(i + 1, min(i + 5, len(t))):
+                cand = t[j]
+                if cand in suit_map:
+                    suit = suit_map[cand]; i = j; break
+                if cand.lower() in suit_map:
+                    suit = suit_map[cand.lower()]; i = j; break
             if suit:
-                cards.append(rank + suit)
+                cards_sym.append(ch + suit)
         i += 1
 
-    c1 = cards[0] if len(cards) > 0 else ''
-    c2 = cards[1] if len(cards) > 1 else ''
+    c1 = (cards_en + cards_sym + [''])[0]
+    c2 = (cards_en + cards_sym + ['', ''])[1]
     return c1, c2
 
 
@@ -583,14 +603,22 @@ def parse_mosaic_text(ocr_text, labels):
         if result:
             return result
 
-    # ── Formato texto simples [LABEL] valor ──
+    # ── Normalizar: OCR confunde dígito 0 com letra O nos labels ──
+    # Ex: [STO] → [ST0], [NMO] → [NM0]
+    normalized = re.sub(
+        r'\[([A-Z]{1,3})([0-9O]{1,2})\]',
+        lambda m: '[' + m.group(1) + m.group(2).replace('O', '0').replace('o', '0') + ']',
+        ocr_text
+    )
+
+    # ── Formato texto simples: [LABEL]\n\nvalor\n\n[PRÓXIMO] ──
     for i, label in enumerate(labels):
         next_label = labels[i + 1] if i + 1 < len(labels) else None
         if next_label:
             pat = r'\[' + re.escape(label) + r'\]\s*(.*?)\s*(?=\[' + re.escape(next_label) + r'\])'
         else:
             pat = r'\[' + re.escape(label) + r'\]\s*(.*?)$'
-        m = re.search(pat, ocr_text, re.DOTALL | re.IGNORECASE)
+        m = re.search(pat, normalized, re.DOTALL | re.IGNORECASE)
         result[label] = m.group(1).strip() if m else ''
 
     return result
