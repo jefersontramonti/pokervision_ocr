@@ -32,6 +32,8 @@ def get_ocr():
         print("🔄 Carregando Chandra OCR 2 (4B)... isso leva ~30s na primeira vez")
         t0 = time.time()
         try:
+            import torch
+            torch.backends.cudnn.enabled = False
             from chandra.model import InferenceManager
             from chandra.model.schema import BatchInputItem
 
