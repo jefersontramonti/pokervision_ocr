@@ -32,14 +32,22 @@ def get_ocr():
         print("🔄 Carregando Chandra OCR 2 (4B)... isso leva ~30s na primeira vez")
         t0 = time.time()
         try:
-            from chandra_ocr import ocr
+            from chandra.model import InferenceManager
+            from chandra.model.schema import BatchInputItem
+
+            manager = InferenceManager(method="hf")
+
+            def ocr_fn(img):
+                results = manager.generate([BatchInputItem(image=img)])
+                return results[0].raw or results[0].markdown or ""
+
             # Warmup com imagem dummy
             dummy = Image.new('RGB', (100, 30), (255, 255, 255))
-            ocr(dummy)
-            _ocr_model = ocr
+            ocr_fn(dummy)
+            _ocr_model = ocr_fn
             print(f"✅ Chandra OCR 2 pronto em {time.time()-t0:.1f}s")
-        except ImportError:
-            print("⚠️  chandra-ocr não instalado, usando fallback pytesseract")
+        except ImportError as e:
+            print(f"⚠️  chandra-ocr não disponível ({e}), usando fallback pytesseract")
             try:
                 import pytesseract
                 _ocr_model = lambda img: pytesseract.image_to_string(img).strip()
