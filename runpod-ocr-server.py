@@ -261,6 +261,25 @@ def detect_dealer_position(img_pil, dealer_regions):
     return best_seat if best_score > 5 else -1
 
 
+# ============ CONSTANTES ============
+
+POS_MAPS = {
+    2: ['BTN','BB'],
+    3: ['BTN','SB','BB'],
+    4: ['BTN','SB','BB','UTG'],
+    5: ['BTN','SB','BB','UTG','CO'],
+    6: ['BTN','SB','BB','UTG','HJ','CO'],
+    7: ['BTN','SB','BB','UTG','MP','HJ','CO'],
+    8: ['BTN','SB','BB','UTG','UTG+1','MP','HJ','CO'],
+    9: ['BTN','SB','BB','UTG','UTG+1','LJ','MP','HJ','CO'],
+}
+
+
+def _valid_region(r):
+    """Retorna True se a região tem dimensões válidas (não zerada)."""
+    return r and isinstance(r, dict) and r.get('w', 0) > 0 and r.get('h', 0) > 0
+
+
 # ============ COORDENADAS FIXAS — PRESETS ============
 
 # GGPoker 8-max Bounty Hunters (janela 1260x898)
@@ -473,19 +492,19 @@ def analyze_table(img_pil):
     batch_keys = []    # lista de (tipo, índice) para mapear resultado
 
     # 3a. Blinds
-    if coords.get('blinds'):
+    if _valid_region(coords.get('blinds')):
         batch_images.append(crop_region(img_pil, coords['blinds']))
         batch_keys.append(('blinds', 0))
 
     # 3b. Pot
-    if coords.get('pot'):
+    if _valid_region(coords.get('pot')):
         batch_images.append(crop_region(img_pil, coords['pot']))
         batch_keys.append(('pot', 0))
 
     # 3c. Board cards (só se região tem conteúdo visível)
     board_indices = []
     for i, card_region in enumerate(coords.get('board', [])):
-        if card_region and detect_seat_active(img_pil, card_region):
+        if _valid_region(card_region) and detect_seat_active(img_pil, card_region):
             batch_images.append(crop_region(img_pil, card_region))
             batch_keys.append(('board', i))
             board_indices.append(i)
@@ -495,15 +514,15 @@ def analyze_table(img_pil):
         if not seat_active[i]:
             continue
 
-        if sr.get('name'):
+        if _valid_region(sr.get('name')):
             batch_images.append(crop_region(img_pil, sr['name']))
             batch_keys.append(('name', i))
 
-        if sr.get('stack'):
+        if _valid_region(sr.get('stack')):
             batch_images.append(crop_region(img_pil, sr['stack']))
             batch_keys.append(('stack', i))
 
-        if sr.get('cards'):
+        if _valid_region(sr.get('cards')):
             cr = sr['cards']
             half_w = cr['w'] / 2
             c1_r = {'x': cr['x'], 'y': cr['y'], 'w': half_w, 'h': cr['h']}
@@ -513,11 +532,11 @@ def analyze_table(img_pil):
             batch_images.append(crop_region(img_pil, c2_r))
             batch_keys.append(('card2', i))
 
-        if sr.get('bet'):
+        if _valid_region(sr.get('bet')):
             batch_images.append(crop_region(img_pil, sr['bet']))
             batch_keys.append(('bet', i))
 
-        if sr.get('bounty'):
+        if _valid_region(sr.get('bounty')):
             batch_images.append(crop_region(img_pil, sr['bounty']))
             batch_keys.append(('bounty', i))
 
@@ -572,14 +591,7 @@ def analyze_table(img_pil):
     table['street'] = {0: 'preflop', 3: 'flop', 4: 'turn', 5: 'river'}.get(n_board, 'preflop')
 
     # Seats
-    pos_maps = {
-        2: ['BTN','BB'], 3: ['BTN','SB','BB'], 4: ['BTN','SB','BB','UTG'],
-        5: ['BTN','SB','BB','UTG','CO'], 6: ['BTN','SB','BB','UTG','HJ','CO'],
-        7: ['BTN','SB','BB','UTG','MP','HJ','CO'],
-        8: ['BTN','SB','BB','UTG','UTG+1','MP','HJ','CO'],
-        9: ['BTN','SB','BB','UTG','UTG+1','LJ','MP','HJ','CO'],
-    }
-    pos_map = pos_maps.get(num_seats, pos_maps[8])
+    pos_map = POS_MAPS.get(num_seats, POS_MAPS[8])
     seats = []
 
     for i, sr in enumerate(seat_regions):
@@ -751,18 +763,11 @@ def analyze():
     if 'btn_seat_idx' in data and data['btn_seat_idx'] >= 0:
         coords_data = active_coords or load_coords()
         num_seats = int(coords_data.get('seats', 8))
-        btn_idx = data['btn_seat_idx']
-        pos_maps = {
-            2: ['BTN','BB'], 3: ['BTN','SB','BB'], 4: ['BTN','SB','BB','UTG'],
-            5: ['BTN','SB','BB','UTG','CO'], 6: ['BTN','SB','BB','UTG','HJ','CO'],
-            7: ['BTN','SB','BB','UTG','MP','HJ','CO'],
-            8: ['BTN','SB','BB','UTG','UTG+1','MP','HJ','CO'],
-            9: ['BTN','SB','BB','UTG','UTG+1','LJ','MP','HJ','CO'],
-        }
-        pos_map = pos_maps.get(num_seats, pos_maps[8])
+        btn_idx = int(data['btn_seat_idx'])
+        pos_map = POS_MAPS.get(num_seats, POS_MAPS[8])
         analysis['table']['btn_seat'] = btn_idx + 1
         for s in analysis['seats']:
-            i = s['id'] - 1
+            i = int(s['seat']) - 1  # 'seat' é o número sequencial (int), não 'id' (string)
             s['position'] = pos_map[(num_seats - btn_idx + i) % num_seats]
         for s in analysis['seats']:
             s['_po'] = pos_map.index(s['position']) if s['position'] in pos_map else 99
