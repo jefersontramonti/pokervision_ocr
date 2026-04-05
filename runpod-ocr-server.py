@@ -468,11 +468,201 @@ def save_coords(coords):
 
 # ============ ANÁLISE COMPLETA ============
 
+VLM_PROMPT = """You are analyzing a GGPoker 8-max poker table screenshot.
+Extract all visible game data and return ONLY a valid JSON object. No explanation, no markdown.
+
+{
+  "pot": <number or 0>,
+  "board": ["Ah","Ks","2d"],
+  "dealer_id": "<seat_id where D button is visible, or empty string>",
+  "seats": [
+    {
+      "id": "<seat_id>",
+      "name": "<player name or empty>",
+      "stack": <number or 0>,
+      "active": <true if player has cards in hand, false if folded or empty>,
+      "cards": ["Ah","Ks"],
+      "bet": <number or 0>
+    }
+  ]
+}
+
+Seat IDs (fixed positions on table):
+- bottom_center = HERO (bottom center)
+- bottom_left   = bottom left
+- left          = left side
+- top_left      = top left
+- top           = top center
+- top_right     = top right
+- right         = right side
+- bottom_right  = bottom right
+
+Card format: rank + suit letter. Examples: Ah=Ace hearts, Ks=King spades, Td=Ten diamonds, 2c=2 clubs.
+Include ALL 8 seats. active=true only if player still has cards (not folded, not empty seat).
+Hero cards are face-up (visible). Villain cards are face-down (red backs) — leave cards=[] for villains.
+Return ONLY the JSON object."""
+
+
+def analyze_table_vlm(img_pil):
+    """
+    Analisa mesa inteira com UMA única chamada VLM.
+    Envia a imagem completa com prompt estruturado → recebe JSON com todos os dados.
+    """
+    manager = get_ocr_manager()
+    if not manager or not _BatchInputItem:
+        return None, {}
+
+    t0 = time.time()
+    timings = {}
+
+    coords = active_coords or load_coords()
+    num_seats = int(coords.get('seats', 8))
+    seat_regions = coords.get('seat_regions', [])
+
+    # ── Fase 1: Dealer detection (visual, sem OCR) ──
+    t1 = time.time()
+    dealer_regions = [s.get('dealer') for s in seat_regions]
+    btn_seat_idx = detect_dealer_position(img_pil, dealer_regions)
+    timings['dealer'] = f"{(time.time()-t1)*1000:.0f}ms"
+    print(f"  Dealer visual: seat_idx={btn_seat_idx}")
+
+    # ── Fase 2: UMA chamada VLM com imagem completa ──
+    t1 = time.time()
+    raw_text = ''
+    vlm_data = None
+
+    try:
+        item = _BatchInputItem(image=img_pil, prompt=VLM_PROMPT, prompt_type="chat")
+        results = manager.generate([item])
+        raw_text = (results[0].raw or results[0].markdown or '').strip()
+    except Exception as e:
+        print(f"  VLM chat falhou ({e}), tentando prompt_type=ocr...")
+        try:
+            item = _BatchInputItem(image=img_pil, prompt_type="ocr")
+            results = manager.generate([item])
+            raw_text = (results[0].raw or results[0].markdown or '').strip()
+        except Exception as e2:
+            print(f"  VLM ocr também falhou: {e2}")
+
+    timings['vlm'] = f"{(time.time()-t1)*1000:.0f}ms"
+    print(f"  VLM response ({len(raw_text)} chars): {raw_text[:200]}")
+
+    # ── Fase 3: Parse JSON da resposta ──
+    t1 = time.time()
+    raw_text_clean = re.sub(r'```(?:json)?\n?', '', raw_text).strip()
+    json_match = re.search(r'\{[\s\S]*\}', raw_text_clean)
+    if json_match:
+        try:
+            vlm_data = json.loads(json_match.group())
+        except json.JSONDecodeError as e:
+            print(f"  JSON parse error: {e}")
+
+    timings['parse'] = f"{(time.time()-t1)*1000:.0f}ms"
+
+    # ── Fase 4: Montar resultado no formato padrão ──
+    table = {
+        'pot': 0, 'board': [], 'street': 'preflop',
+        'blinds': '', 'btn_seat': btn_seat_idx + 1 if btn_seat_idx >= 0 else -1,
+        'num_active': 0, 'last_action': '', 'bet_to_call': 0,
+        'tournament': True,
+        'vlm_raw': raw_text[:500],  # debug: resposta bruta
+    }
+    seats = []
+
+    if vlm_data:
+        # Pot
+        table['pot'] = parse_number(str(vlm_data.get('pot', 0)))
+
+        # Board
+        for c in vlm_data.get('board', []):
+            card = parse_card_text(str(c))
+            if card:
+                table['board'].append(card)
+        n_board = len(table['board'])
+        table['street'] = {0:'preflop', 3:'flop', 4:'turn', 5:'river'}.get(n_board, 'preflop')
+
+        # Dealer via VLM (se visual falhou)
+        if btn_seat_idx < 0:
+            dealer_id = vlm_data.get('dealer_id', '')
+            for i, sr in enumerate(seat_regions):
+                if sr.get('id') == dealer_id:
+                    btn_seat_idx = i
+                    table['btn_seat'] = i + 1
+                    break
+
+        # Seats
+        pos_map = POS_MAPS.get(num_seats, POS_MAPS[8])
+        vlm_seats_by_id = {s['id']: s for s in vlm_data.get('seats', []) if 'id' in s}
+
+        for i, sr in enumerate(seat_regions):
+            seat_num = i + 1
+            is_hero = (i == 0)
+            phys_id = sr.get('id', f'seat_{seat_num}')
+            phys_label = sr.get('label', f'Seat {seat_num}')
+            vs = vlm_seats_by_id.get(phys_id, {})
+
+            active = bool(vs.get('active', False))
+            seat = {
+                'seat': seat_num,
+                'id': phys_id,
+                'label': phys_label,
+                'name': vs.get('name', '') or ('Hero' if is_hero else f'Player{seat_num}'),
+                'stack': parse_number(str(vs.get('stack', 0))),
+                'cards': [parse_card_text(str(c)) for c in vs.get('cards', [])][:2],
+                'position': '?',
+                'bet': parse_number(str(vs.get('bet', 0))),
+                'bounty': '',
+                'is_hero': is_hero,
+                'active': active,
+                'action': '',
+            }
+            # Garante 2 elementos em cards
+            while len(seat['cards']) < 2:
+                seat['cards'].append('')
+
+            if btn_seat_idx >= 0:
+                seat['position'] = pos_map[(num_seats - btn_seat_idx + i) % num_seats]
+
+            seats.append(seat)
+
+        # Ações
+        active_seats = [s for s in seats if s['active']]
+        table['num_active'] = len(active_seats)
+        max_bet = max((s['bet'] for s in active_seats), default=0)
+        if max_bet > 0 and math.isfinite(max_bet):
+            bettor = next((s for s in active_seats if s['bet'] == max_bet), None)
+            table['last_action'] = f"Bet {int(max_bet):,}"
+            table['bet_to_call'] = max_bet
+            if bettor:
+                bettor['action'] = f"Bet {int(max_bet):,}"
+
+        # Ordenar por posição
+        if btn_seat_idx >= 0:
+            for s in seats:
+                s['_po'] = pos_map.index(s['position']) if s['position'] in pos_map else 99
+            seats.sort(key=lambda s: s['_po'])
+            for s in seats:
+                s.pop('_po', None)
+    else:
+        # VLM não retornou JSON válido — seats vazios com erro
+        print("  ⚠️  VLM não retornou JSON válido")
+        for i, sr in enumerate(seat_regions):
+            seats.append({
+                'seat': i+1, 'id': sr.get('id',''), 'label': sr.get('label',''),
+                'name': '', 'stack': 0, 'cards': ['',''], 'position': '?',
+                'bet': 0, 'bounty': '', 'is_hero': i==0, 'active': False, 'action': '',
+            })
+
+    elapsed = time.time() - t0
+    print(f"\n✅ VLM análise em {elapsed:.1f}s | Board: {table['board']} | Pot: {table['pot']}")
+    return {'table': table, 'seats': seats, 'timings': timings}, elapsed
+
+
 def analyze_table(img_pil):
     """
-    Análise completa da mesa — BATCH OCR.
+    Análise completa da mesa — BATCH OCR (fallback).
     Coleta TODAS as regiões primeiro, faz UMA chamada batch ao Chandra,
-    depois parseia os resultados. ~3-5x mais rápido que OCR sequencial.
+    depois parseia os resultados.
     """
     coords = active_coords or load_coords()
     num_seats = int(coords.get('seats', 8))
@@ -787,7 +977,13 @@ def analyze():
     print(f"\n{'='*60}")
     print(f"📸 Nova análise — imagem {img_pil.size[0]}x{img_pil.size[1]}")
 
-    analysis, elapsed = analyze_table(img_pil)
+    # Usar VLM single-call por padrão (muito mais rápido)
+    # Fallback para batch OCR se o caller pedir explicitamente
+    use_batch = data.get('use_batch', False)
+    if use_batch:
+        analysis, elapsed = analyze_table(img_pil)
+    else:
+        analysis, elapsed = analyze_table_vlm(img_pil)
 
     # Override dealer se frontend enviou manualmente
     if 'btn_seat_idx' in data and data['btn_seat_idx'] >= 0:
