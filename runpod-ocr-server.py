@@ -251,7 +251,7 @@ def detect_seat_active(img_pil, region, is_hero=False):
         # Variância indica que tem conteúdo (texto, naipes) e não é fundo uniforme
         gray = np.mean(arr, axis=2)
         variance = float(np.var(gray))
-        return bright_pct > 15 and variance > 500
+        return bool(bright_pct > 15 and variance > 500)
     else:
         # Vilões: verso vermelho das cartas do GGPoker
         # Vermelho: R alto, G baixo, B baixo (verso escuro-avermelhado)
@@ -263,7 +263,7 @@ def detect_seat_active(img_pil, region, is_hero=False):
         dark_red_pct = np.sum(dark_red_mask) / total_pixels * 100
 
         # Se mais de 10% da região é vermelha → tem cartas
-        return red_pct > 10 or dark_red_pct > 15
+        return bool(red_pct > 10 or dark_red_pct > 15)
 
 
 def detect_dealer_position(img_pil, dealer_regions):
