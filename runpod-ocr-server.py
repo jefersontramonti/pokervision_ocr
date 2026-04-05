@@ -273,96 +273,122 @@ PRESETS = {
         'seats': 8,
 
         # ── Info da mesa (barra superior com level, blinds, prize) ──
-        'blinds': {'x': 0.00, 'y': 0.00, 'w': 0.40, 'h': 0.07},
+        'blinds': {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
 
         # ── Pot (centro da mesa) ──
-        'pot': {'x': 0.33, 'y': 0.28, 'w': 0.34, 'h': 0.06},
+        'pot': {'x': 0.5136, 'y': 0.3370, 'w': 0.0753, 'h': 0.0441},
 
-        # ── Board cards (5 posições — flop/turn/river) ──
+        # ── Board cards (5 posições — flop/turn/river) ── calibrado
         'board': [
-            {'x': 0.29, 'y': 0.33, 'w': 0.09, 'h': 0.19},
-            {'x': 0.38, 'y': 0.33, 'w': 0.09, 'h': 0.19},
-            {'x': 0.47, 'y': 0.33, 'w': 0.09, 'h': 0.19},
-            {'x': 0.56, 'y': 0.33, 'w': 0.09, 'h': 0.19},
-            {'x': 0.65, 'y': 0.33, 'w': 0.09, 'h': 0.19},
+            {'x': 0.2956, 'y': 0.3799, 'w': 0.0760, 'h': 0.1548},
+            {'x': 0.3778, 'y': 0.3788, 'w': 0.0784, 'h': 0.1582},
+            {'x': 0.4631, 'y': 0.3776, 'w': 0.0784, 'h': 0.1593},
+            {'x': 0.5469, 'y': 0.3810, 'w': 0.0815, 'h': 0.1605},
+            {'x': 0.6315, 'y': 0.3799, 'w': 0.0815, 'h': 0.1638},
         ],
 
         # ── Botões de ação do Hero (Fold / Call / Raise / Check) ──
-        'hero_actions': {'x': 0.53, 'y': 0.87, 'w': 0.45, 'h': 0.07},
+        'hero_actions': {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
 
-        # ── Seats (anti-horário a partir do Hero, como GGPoker) ──
+        # ── Seats com ID por posição física na mesa ──
+        # ID fixo baseado na posição visual (não muda com dealer)
+        # Coordenadas calibradas via calibrate.html
         'seat_regions': [
-            # Seat 1: HERO — TurnZero (bottom center)
+            # Seat 0: HERO (bottom center)
             {
-                'name':    {'x': 0.42, 'y': 0.87, 'w': 0.16, 'h': 0.04},
-                'stack':   {'x': 0.42, 'y': 0.91, 'w': 0.16, 'h': 0.05},
-                'cards':   {'x': 0.42, 'y': 0.70, 'w': 0.16, 'h': 0.17},
-                'bet':     {'x': 0.44, 'y': 0.65, 'w': 0.12, 'h': 0.04},
-                'dealer':  {'x': 0.40, 'y': 0.67, 'w': 0.04, 'h': 0.05},
-                'bounty':  {'x': 0.45, 'y': 0.67, 'w': 0.10, 'h': 0.03},
+                'id': 'hero',
+                'label': 'HERO',
+                'position': 'bottom_center',
+                'name':    {'x': 0.4306, 'y': 0.8703, 'w': 0.1427, 'h': 0.0362},
+                'stack':   {'x': 0.4337, 'y': 0.9053, 'w': 0.1334, 'h': 0.0452},
+                'cards':   {'x': 0.4313, 'y': 0.7302, 'w': 0.1466, 'h': 0.1051},
+                'bet':     {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
+                'dealer':  {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
+                'bounty':  {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
             },
-            # Seat 2: ↙ — (bottom-left)
+            # Seat 1: ↙ (bottom-left)
             {
-                'name':    {'x': 0.14, 'y': 0.77, 'w': 0.15, 'h': 0.04},
-                'stack':   {'x': 0.14, 'y': 0.81, 'w': 0.15, 'h': 0.05},
-                'cards':   {'x': 0.12, 'y': 0.62, 'w': 0.14, 'h': 0.14},
-                'bet':     {'x': 0.22, 'y': 0.58, 'w': 0.10, 'h': 0.04},
-                'dealer':  {'x': 0.27, 'y': 0.69, 'w': 0.04, 'h': 0.05},
-                'bounty':  {'x': 0.14, 'y': 0.61, 'w': 0.08, 'h': 0.03},
+                'id': 'bottom_left',
+                'label': 'Bottom Left',
+                'position': 'bottom_left',
+                'name':    {'x': 0.1497, 'y': 0.7325, 'w': 0.1296, 'h': 0.0316},
+                'stack':   {'x': 0.1505, 'y': 0.7652, 'w': 0.1241, 'h': 0.0373},
+                'cards':   {'x': 0.1552, 'y': 0.5935, 'w': 0.1140, 'h': 0.1051},
+                'bet':     {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
+                'dealer':  {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
+                'bounty':  {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
             },
-            # Seat 3: ← — (left)
+            # Seat 2: ← (left)
             {
-                'name':    {'x': 0.01, 'y': 0.53, 'w': 0.13, 'h': 0.04},
-                'stack':   {'x': 0.01, 'y': 0.57, 'w': 0.13, 'h': 0.05},
-                'cards':   {'x': 0.00, 'y': 0.37, 'w': 0.11, 'h': 0.14},
-                'bet':     {'x': 0.13, 'y': 0.53, 'w': 0.10, 'h': 0.04},
-                'dealer':  {'x': 0.12, 'y': 0.48, 'w': 0.04, 'h': 0.05},
-                'bounty':  {'x': 0.02, 'y': 0.36, 'w': 0.08, 'h': 0.03},
+                'id': 'left',
+                'label': 'Left',
+                'position': 'left',
+                'name':    {'x': 0.0147, 'y': 0.4624, 'w': 0.1358, 'h': 0.0362},
+                'stack':   {'x': 0.0194, 'y': 0.5019, 'w': 0.1272, 'h': 0.0316},
+                'cards':   {'x': 0.0171, 'y': 0.3370, 'w': 0.1296, 'h': 0.0972},
+                'bet':     {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
+                'dealer':  {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
+                'bounty':  {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
             },
-            # Seat 4: ↖ — (top-left)
+            # Seat 3: ↖ (top-left)
             {
-                'name':    {'x': 0.16, 'y': 0.22, 'w': 0.16, 'h': 0.04},
-                'stack':   {'x': 0.16, 'y': 0.26, 'w': 0.16, 'h': 0.05},
-                'cards':   {'x': 0.16, 'y': 0.08, 'w': 0.14, 'h': 0.14},
-                'bet':     {'x': 0.28, 'y': 0.31, 'w': 0.10, 'h': 0.04},
-                'dealer':  {'x': 0.30, 'y': 0.27, 'w': 0.04, 'h': 0.05},
-                'bounty':  {'x': 0.18, 'y': 0.06, 'w': 0.08, 'h': 0.03},
+                'id': 'top_left',
+                'label': 'Top Left',
+                'position': 'top_left',
+                'name':    {'x': 0.1715, 'y': 0.2206, 'w': 0.1319, 'h': 0.0373},
+                'stack':   {'x': 0.1715, 'y': 0.2590, 'w': 0.1303, 'h': 0.0362},
+                'cards':   {'x': 0.1792, 'y': 0.1019, 'w': 0.1125, 'h': 0.0847},
+                'bet':     {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
+                'dealer':  {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
+                'bounty':  {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
             },
-            # Seat 5: ↑ — (top center)
+            # Seat 4: ↑ (top center)
             {
-                'name':    {'x': 0.42, 'y': 0.12, 'w': 0.16, 'h': 0.04},
-                'stack':   {'x': 0.42, 'y': 0.16, 'w': 0.16, 'h': 0.05},
-                'cards':   {'x': 0.43, 'y': 0.00, 'w': 0.14, 'h': 0.12},
-                'bet':     {'x': 0.44, 'y': 0.22, 'w': 0.12, 'h': 0.04},
-                'dealer':  {'x': 0.41, 'y': 0.20, 'w': 0.04, 'h': 0.05},
-                'bounty':  {'x': 0.47, 'y': 0.03, 'w': 0.08, 'h': 0.03},
+                'id': 'top',
+                'label': 'Top',
+                'position': 'top_center',
+                'name':    {'x': 0.4414, 'y': 0.1663, 'w': 0.1272, 'h': 0.0328},
+                'stack':   {'x': 0.4422, 'y': 0.1980, 'w': 0.1234, 'h': 0.0452},
+                'cards':   {'x': 0.4492, 'y': 0.0364, 'w': 0.1086, 'h': 0.0972},
+                'bet':     {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
+                'dealer':  {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
+                'bounty':  {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
             },
-            # Seat 6: ↗ — (top-right)
+            # Seat 5: ↗ (top-right)
             {
-                'name':    {'x': 0.68, 'y': 0.22, 'w': 0.18, 'h': 0.04},
-                'stack':   {'x': 0.68, 'y': 0.26, 'w': 0.18, 'h': 0.05},
-                'cards':   {'x': 0.72, 'y': 0.08, 'w': 0.14, 'h': 0.14},
-                'bet':     {'x': 0.62, 'y': 0.31, 'w': 0.10, 'h': 0.04},
-                'dealer':  {'x': 0.66, 'y': 0.27, 'w': 0.04, 'h': 0.05},
-                'bounty':  {'x': 0.74, 'y': 0.06, 'w': 0.08, 'h': 0.03},
+                'id': 'top_right',
+                'label': 'Top Right',
+                'position': 'top_right',
+                'name':    {'x': 0.7168, 'y': 0.2183, 'w': 0.1303, 'h': 0.0395},
+                'stack':   {'x': 0.7192, 'y': 0.2579, 'w': 0.1249, 'h': 0.0384},
+                'cards':   {'x': 0.7223, 'y': 0.0929, 'w': 0.1133, 'h': 0.0983},
+                'bet':     {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
+                'dealer':  {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
+                'bounty':  {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
             },
-            # Seat 7: → — (right)
+            # Seat 6: → (right)
             {
-                'name':    {'x': 0.82, 'y': 0.53, 'w': 0.16, 'h': 0.04},
-                'stack':   {'x': 0.82, 'y': 0.57, 'w': 0.16, 'h': 0.05},
-                'cards':   {'x': 0.84, 'y': 0.37, 'w': 0.14, 'h': 0.14},
-                'bet':     {'x': 0.76, 'y': 0.53, 'w': 0.10, 'h': 0.04},
-                'dealer':  {'x': 0.82, 'y': 0.48, 'w': 0.04, 'h': 0.05},
-                'bounty':  {'x': 0.86, 'y': 0.36, 'w': 0.08, 'h': 0.03},
+                'id': 'right',
+                'label': 'Right',
+                'position': 'right',
+                'name':    {'x': 0.8596, 'y': 0.4624, 'w': 0.1272, 'h': 0.0373},
+                'stack':   {'x': 0.8604, 'y': 0.4997, 'w': 0.1226, 'h': 0.0395},
+                'cards':   {'x': 0.8697, 'y': 0.3404, 'w': 0.1071, 'h': 0.0915},
+                'bet':     {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
+                'dealer':  {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
+                'bounty':  {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
             },
-            # Seat 8: ↘ — (bottom-right)
+            # Seat 7: ↘ (bottom-right)
             {
-                'name':    {'x': 0.72, 'y': 0.77, 'w': 0.16, 'h': 0.04},
-                'stack':   {'x': 0.72, 'y': 0.81, 'w': 0.16, 'h': 0.05},
-                'cards':   {'x': 0.74, 'y': 0.62, 'w': 0.14, 'h': 0.14},
-                'bet':     {'x': 0.65, 'y': 0.58, 'w': 0.10, 'h': 0.04},
-                'dealer':  {'x': 0.70, 'y': 0.69, 'w': 0.04, 'h': 0.05},
-                'bounty':  {'x': 0.76, 'y': 0.61, 'w': 0.08, 'h': 0.03},
+                'id': 'bottom_right',
+                'label': 'Bottom Right',
+                'position': 'bottom_right',
+                'name':    {'x': 0.7308, 'y': 0.7291, 'w': 0.1257, 'h': 0.0373},
+                'stack':   {'x': 0.7331, 'y': 0.7641, 'w': 0.1195, 'h': 0.0418},
+                'cards':   {'x': 0.7386, 'y': 0.6025, 'w': 0.1109, 'h': 0.0972},
+                'bet':     {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
+                'dealer':  {'x': 0.6912, 'y': 0.6658, 'w': 0.0341, 'h': 0.0475},
+                'bounty':  {'x': 0.00, 'y': 0.00, 'w': 0.00, 'h': 0.00},
             },
         ],
     }
@@ -557,11 +583,18 @@ def analyze_table(img_pil):
     seats = []
 
     for i, sr in enumerate(seat_regions):
-        seat_id = i + 1
+        seat_num = i + 1
         is_hero = (i == 0)
+        # ID de posição física vem do preset/calibração
+        phys_id = sr.get('id', f'seat_{seat_num}')
+        phys_label = sr.get('label', f'Seat {seat_num}')
         seat = {
-            'id': seat_id, 'name': '', 'stack': 0, 'cards': ['', ''],
-            'position': '?', 'bet': 0, 'bounty': '',
+            'seat': seat_num,           # número sequencial (1-8)
+            'id': phys_id,              # ID fixo de posição na mesa (hero, left, top_right...)
+            'label': phys_label,        # label legível (HERO, Left, Top Right...)
+            'name': '', 'stack': 0, 'cards': ['', ''],
+            'position': '?',            # posição poker dinâmica (BTN, SB, BB, UTG...)
+            'bet': 0, 'bounty': '',
             'is_hero': is_hero, 'active': seat_active[i], 'action': '',
         }
 
@@ -574,30 +607,30 @@ def analyze_table(img_pil):
         if raw_name and len(raw_name) > 1:
             seat['name'] = raw_name
         else:
-            seat['name'] = 'Hero' if is_hero else f'Player{seat_id}'
+            seat['name'] = 'Hero' if is_hero else f'Player{seat_num}'
         if 'sitting' in seat['name'].lower() or 'sit out' in seat['name'].lower():
             seat['active'] = False
             seats.append(seat)
             continue
-        print(f"  Seat {seat_id} name: {seat['name']}")
+        print(f"  [{phys_id}] name: {seat['name']}")
 
         # Stack
         raw_stack = result_map.get('stack', {}).get(i, '')
         seat['stack'] = parse_number(raw_stack)
-        print(f"  Seat {seat_id} stack: {seat['stack']}")
+        print(f"  [{phys_id}] stack: {seat['stack']}")
 
         # Cards
         c1_raw = result_map.get('card1', {}).get(i, '')
         c2_raw = result_map.get('card2', {}).get(i, '')
         seat['cards'] = [parse_card_text(c1_raw), parse_card_text(c2_raw)]
         if seat['cards'][0] or seat['cards'][1]:
-            print(f"  Seat {seat_id} cards: {seat['cards']}")
+            print(f"  [{phys_id}] cards: {seat['cards']}")
 
         # Bet
         raw_bet = result_map.get('bet', {}).get(i, '')
         seat['bet'] = parse_number(raw_bet)
         if seat['bet'] > 0:
-            print(f"  Seat {seat_id} bet: {seat['bet']}")
+            print(f"  [{phys_id}] bet: {seat['bet']}")
 
         # Bounty
         seat['bounty'] = result_map.get('bounty', {}).get(i, '')
@@ -639,7 +672,7 @@ def analyze_table(img_pil):
     for s in seats:
         if s['active']:
             hero_tag = ' ★HERO' if s['is_hero'] else ''
-            print(f"     [{s['id']}] {s['position']:6s} {s['name']:15s} stack={s['stack']:>8,} bet={s['bet']:>6,} cards={s['cards']}{hero_tag}")
+            print(f"     [{s['id']:13s}] {s['position']:6s} {s['name']:15s} stack={s['stack']:>8,} bet={s['bet']:>6,} cards={s['cards']}{hero_tag}")
 
     return {'table': table, 'seats': seats, 'timings': timings}, elapsed
 
@@ -673,12 +706,15 @@ def health():
         gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'
     except:
         pass
+    # Extrair IDs das posições configuradas
+    seat_ids = [sr.get('id', f'seat_{i+1}') for i, sr in enumerate(coords.get('seat_regions', []))]
     return jsonify({
         'status': 'ok',
         'ocr_engine': 'Chandra OCR 2',
         'gpu': gpu_name,
         'preset': coords.get('name', 'custom'),
         'seats': coords.get('seats', 8),
+        'seat_ids': seat_ids,
         'ocr_ready': _ocr_manager is not None,
     })
 
@@ -748,6 +784,19 @@ def analyze():
     })
 
 
+# IDs padrão por posição física (8-max, anti-horário a partir do hero)
+DEFAULT_SEAT_IDS = [
+    {'id': 'hero',         'label': 'HERO',         'position': 'bottom_center'},
+    {'id': 'bottom_left',  'label': 'Bottom Left',  'position': 'bottom_left'},
+    {'id': 'left',         'label': 'Left',         'position': 'left'},
+    {'id': 'top_left',     'label': 'Top Left',     'position': 'top_left'},
+    {'id': 'top',          'label': 'Top',          'position': 'top_center'},
+    {'id': 'top_right',    'label': 'Top Right',    'position': 'top_right'},
+    {'id': 'right',        'label': 'Right',        'position': 'right'},
+    {'id': 'bottom_right', 'label': 'Bottom Right', 'position': 'bottom_right'},
+]
+
+
 @app.route('/update-coords', methods=['POST'])
 def update_coords():
     if not check_auth():
@@ -755,6 +804,12 @@ def update_coords():
     data = request.get_json()
     if not data:
         return jsonify({'error': 'Missing coords data'}), 400
+
+    # Injetar IDs de posição se não vieram da calibração
+    for i, sr in enumerate(data.get('seat_regions', [])):
+        if 'id' not in sr and i < len(DEFAULT_SEAT_IDS):
+            sr.update(DEFAULT_SEAT_IDS[i])
+
     save_coords(data)
     return jsonify({'status': 'ok', 'message': 'Coordenadas salvas'})
 
