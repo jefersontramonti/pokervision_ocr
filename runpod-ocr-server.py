@@ -31,6 +31,25 @@ from flask_cors import CORS
 from PIL import Image
 import numpy as np
 
+# ============ CONSTANTES ============
+
+# Mapa de posições poker por número de seats (constante global, sem duplicação)
+POS_MAPS = {
+    2: ['BTN','BB'], 3: ['BTN','SB','BB'], 4: ['BTN','SB','BB','UTG'],
+    5: ['BTN','SB','BB','UTG','CO'], 6: ['BTN','SB','BB','UTG','HJ','CO'],
+    7: ['BTN','SB','BB','UTG','MP','HJ','CO'],
+    8: ['BTN','SB','BB','UTG','UTG+1','MP','HJ','CO'],
+    9: ['BTN','SB','BB','UTG','UTG+1','LJ','MP','HJ','CO'],
+}
+
+
+def _valid_region(region):
+    """Verifica se uma região de coordenadas é válida (não zerada)."""
+    if not region or not isinstance(region, dict):
+        return False
+    return region.get('w', 0) > 0 and region.get('h', 0) > 0
+
+
 # ============ OCR ENGINE (Chandra OCR 2) — BATCH MODE ============
 
 _ocr_manager = None   # InferenceManager singleton
@@ -193,8 +212,16 @@ def parse_card_text(text):
     return ''
 
 
-def detect_seat_active(img_pil, region):
-    """Detecta se um seat tem cartas visíveis (brilho + variância)"""
+def detect_seat_active(img_pil, region, is_hero=False):
+    """
+    Detecta se um seat tem cartas visíveis.
+
+    Vilões: procura o VERSO VERMELHO das cartas (GGPoker usa verso vermelho).
+    Se a região de cards tem bastante pixel vermelho → jogador está na mão.
+    Se não tem vermelho → foldou ou seat vazio.
+
+    Hero: cartas são face-up (brancas com texto), usa brilho + variância.
+    """
     W, H = img_pil.size
     x, y, w, h = region['x'], region['y'], region['w'], region['h']
     if x <= 1 and y <= 1:
@@ -207,18 +234,33 @@ def detect_seat_active(img_pil, region):
     if arr.size == 0:
         return False
 
-    gray = np.mean(arr, axis=2) if len(arr.shape) == 3 else arr
-    mean_bright = float(np.mean(gray))
-    variance = float(np.var(gray.astype(float)))
+    total_pixels = max(1, arr.shape[0] * arr.shape[1])
 
-    # Cartas face-up: mais brilho e variância que seat vazio
-    if len(arr.shape) == 3:
-        hsv_s = np.std(arr.astype(float), axis=2)
-        colorful = float(np.mean(hsv_s))
+    if len(arr.shape) != 3:
+        return False
+
+    r, g, b = arr[:,:,0].astype(float), arr[:,:,1].astype(float), arr[:,:,2].astype(float)
+
+    if is_hero:
+        # Hero: cartas face-up são claras (branco/cinza claro com texto)
+        bright_mask = (r > 160) & (g > 160) & (b > 160)
+        bright_pct = np.sum(bright_mask) / total_pixels * 100
+        # Variância indica que tem conteúdo (texto, naipes) e não é fundo uniforme
+        gray = np.mean(arr, axis=2)
+        variance = float(np.var(gray))
+        return bright_pct > 15 and variance > 500
     else:
-        colorful = 0
+        # Vilões: verso vermelho das cartas do GGPoker
+        # Vermelho: R alto, G baixo, B baixo (verso escuro-avermelhado)
+        red_mask = (r > 120) & (g < 80) & (b < 80) & (r > g * 1.8) & (r > b * 1.8)
+        red_pct = np.sum(red_mask) / total_pixels * 100
 
-    return (mean_bright > 70 and variance > 600) or (colorful > 30 and variance > 400)
+        # Também detectar vermelho mais escuro/marrom (variações do verso)
+        dark_red_mask = (r > 80) & (r < 180) & (g < 60) & (b < 60) & (r > g * 2)
+        dark_red_pct = np.sum(dark_red_mask) / total_pixels * 100
+
+        # Se mais de 10% da região é vermelha → tem cartas
+        return red_pct > 10 or dark_red_pct > 15
 
 
 def detect_dealer_position(img_pil, dealer_regions):
@@ -259,25 +301,6 @@ def detect_dealer_position(img_pil, dealer_regions):
                 best_seat = seat_idx
 
     return best_seat if best_score > 5 else -1
-
-
-# ============ CONSTANTES ============
-
-POS_MAPS = {
-    2: ['BTN','BB'],
-    3: ['BTN','SB','BB'],
-    4: ['BTN','SB','BB','UTG'],
-    5: ['BTN','SB','BB','UTG','CO'],
-    6: ['BTN','SB','BB','UTG','HJ','CO'],
-    7: ['BTN','SB','BB','UTG','MP','HJ','CO'],
-    8: ['BTN','SB','BB','UTG','UTG+1','MP','HJ','CO'],
-    9: ['BTN','SB','BB','UTG','UTG+1','LJ','MP','HJ','CO'],
-}
-
-
-def _valid_region(r):
-    """Retorna True se a região tem dimensões válidas (não zerada)."""
-    return r and isinstance(r, dict) and r.get('w', 0) > 0 and r.get('h', 0) > 0
 
 
 # ============ COORDENADAS FIXAS — PRESETS ============
@@ -479,9 +502,12 @@ def analyze_table(img_pil):
     seat_active = []
     for i, sr in enumerate(seat_regions):
         is_active = True
-        if sr.get('cards'):
-            is_active = detect_seat_active(img_pil, sr['cards'])
+        if _valid_region(sr.get('cards')):
+            is_hero = (i == 0)
+            is_active = detect_seat_active(img_pil, sr['cards'], is_hero=is_hero)
         seat_active.append(is_active)
+        phys_id = sr.get('id', f'seat_{i+1}')
+        print(f"  [{phys_id}] active: {is_active}")
     timings['detect'] = f"{(time.time()-t1)*1000:.0f}ms"
 
     # ════════════════════════════════════════════
@@ -501,10 +527,10 @@ def analyze_table(img_pil):
         batch_images.append(crop_region(img_pil, coords['pot']))
         batch_keys.append(('pot', 0))
 
-    # 3c. Board cards (só se região tem conteúdo visível)
+    # 3c. Board cards (só se região válida e tem conteúdo visível)
     board_indices = []
     for i, card_region in enumerate(coords.get('board', [])):
-        if _valid_region(card_region) and detect_seat_active(img_pil, card_region):
+        if _valid_region(card_region) and detect_seat_active(img_pil, card_region, is_hero=True):
             batch_images.append(crop_region(img_pil, card_region))
             batch_keys.append(('board', i))
             board_indices.append(i)
@@ -767,7 +793,7 @@ def analyze():
         pos_map = POS_MAPS.get(num_seats, POS_MAPS[8])
         analysis['table']['btn_seat'] = btn_idx + 1
         for s in analysis['seats']:
-            i = int(s['seat']) - 1  # 'seat' é o número sequencial (int), não 'id' (string)
+            i = s['seat'] - 1
             s['position'] = pos_map[(num_seats - btn_idx + i) % num_seats]
         for s in analysis['seats']:
             s['_po'] = pos_map.index(s['position']) if s['position'] in pos_map else 99
