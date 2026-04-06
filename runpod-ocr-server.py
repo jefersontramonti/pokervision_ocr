@@ -234,7 +234,7 @@ def analyze_table_fast(img_pil):
     # ── Fase 1: Dealer + seats ativos (pixel, sem OCR) ─────────────
     t1 = time.time()
     dealer_regions = [s.get('dealer') for s in seat_regions]
-    btn_seat_idx   = detect_dealer_button(img_pil, dealer_regions)
+    btn_seat_idx   = detect_dealer_position(img_pil, dealer_regions)
     timings['dealer'] = f"{(time.time()-t1)*1000:.0f}ms"
 
     t1 = time.time()
