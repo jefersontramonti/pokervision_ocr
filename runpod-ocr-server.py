@@ -142,15 +142,17 @@ _RANK_VALID = set('AKQJT98765432')
 
 
 def _card_rank(card_img):
-    """Lê o rank da carta (canto superior esquerdo)."""
+    """Lê o rank da carta (canto superior esquerdo, com fallback na imagem completa)."""
     w, h = card_img.size
-    corner = card_img.crop((0, 0, max(1, int(w * 0.40)), max(1, int(h * 0.50))))
-    raw = _easyocr_read(corner).upper().replace(' ', '')
-    if '10' in raw or 'IO' in raw or '1O' in raw:
-        return 'T'
-    for ch in raw:
-        if ch in _RANK_VALID:
-            return ch
+    corner = card_img.crop((0, 0, max(1, int(w * 0.45)), max(1, int(h * 0.55))))
+
+    for source in (corner, card_img):          # tenta corner primeiro, depois full
+        raw = _easyocr_read(source).upper().replace(' ', '')
+        if '10' in raw or 'IO' in raw or '1O' in raw:
+            return 'T'
+        for ch in raw:
+            if ch in _RANK_VALID:
+                return ch
     return ''
 
 
@@ -178,14 +180,19 @@ def _card_suit(card_img):
     if red_pct > 0.015 and red_pct >= dark_pct:
         # Vermelho: Hearts vs Diamonds
         mask = (r > 160) & (g < 110) & (b < 110)
-        rows = [int(np.sum(mask[i])) for i in range(mask.shape[0])]
-        rows_nz = [w for w in rows if w > 0]
-        if not rows_nz:
+        rows_idx = np.where(np.any(mask, axis=1))[0]
+        if len(rows_idx) < 3:
             return 'h'
-        top_w = rows_nz[0]
-        max_w = max(rows_nz)
+        row_widths = [int(np.sum(mask[i])) for i in rows_idx]
+        top_w = row_widths[0]
+        max_w = max(row_widths)
         # Diamond: topo pontiagudo (top_w << max_w)
-        return 'd' if top_w < max_w * 0.20 else 'h'
+        if top_w < max_w * 0.20:
+            return 'd'
+        # Desempate por centro de massa: hearts pesam no topo (2 corcovas)
+        ys = np.where(mask)[0]
+        centroid_norm = (float(np.mean(ys)) - rows_idx[0]) / max(rows_idx[-1] - rows_idx[0], 1)
+        return 'h' if centroid_norm < 0.46 else 'd'
 
     if dark_pct > 0.015:
         # Preto: Spades vs Clubs
@@ -194,9 +201,12 @@ def _card_suit(card_img):
             mask = ((arr[:, :, 0] < 80) & (arr[:, :, 1] < 80) & (arr[:, :, 2] < 80)).astype(np.uint8)
             h_img = mask.shape[0]
             top   = mask[:int(h_img * 0.70), :] * 255
-            n_labels, _ = cv2.connectedComponents(top)
-            # Clubs: 3 círculos = 3+ componentes; Spades: 1-2
-            return 'c' if (n_labels - 1) >= 3 else 's'
+            n_labels, _, stats, _ = cv2.connectedComponentsWithStats(top)
+            # Filtrar blobs pequenos (ruído) — mínimo 1% da área total
+            min_area = max(5, int(mask.shape[0] * mask.shape[1] * 0.01))
+            big = sum(1 for i in range(1, n_labels) if stats[i, cv2.CC_STAT_AREA] >= min_area)
+            # Clubs: 3 círculos = 3+ blobs; Spades: 1-2 blobs
+            return 'c' if big >= 3 else 's'
         except Exception:
             return 's'
 
@@ -313,7 +323,9 @@ def analyze_table_fast(img_pil):
         name     = ocr_data.get(f'nm{i}', '').strip() or ('Hero' if is_hero else f'Player{i+1}')
         st_text  = ocr_data.get(f'st{i}', '')
         stack    = parse_number(st_text)
-        all_in   = bool(re.search(r'all.?in', st_text, re.IGNORECASE))
+        # Normaliza l/I/1 antes de checar all-in (EasyOCR confunde 'l' com 'I')
+        st_norm  = st_text.lower().replace('i', 'l').replace('1', 'l')
+        all_in   = 'allin' in st_norm.replace('-', '').replace(' ', '')
 
         if re.search(r'sit.?out|sitting', name, re.IGNORECASE):
             active = False
