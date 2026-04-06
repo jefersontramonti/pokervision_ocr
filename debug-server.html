@@ -1191,7 +1191,7 @@ function renderTimingsTab(data, clientElapsed) {
     { key: 'dealer',    label: 'Dealer Detection', desc: 'Detecção visual do botão dealer' },
     { key: 'detect',    label: 'Seat Detection',   desc: 'Detecção de seats ativos (pixel)' },
     { key: 'crop',      label: 'Image Crop',       desc: 'Recorte de todas as regiões' },
-    { key: 'ocr_batch', label: 'OCR Batch',        desc: 'Inferência Chandra OCR 2 (GPU)', isOcr: true },
+    { key: 'ocr',       label: 'OCR Mosaic',        desc: 'Inferência Chandra OCR 2 (GPU)', isOcr: true },
     { key: 'parse',     label: 'Parse Results',    desc: 'Parsing de texto para dados estruturados' },
   ];
 
@@ -1246,7 +1246,7 @@ function renderTimingsTab(data, clientElapsed) {
       </div>
       <div class="flex justify-between" style="margin-top:6px;font-size:11px">
         <span class="text-muted">OCR como % do total</span>
-        <span style="color:#a371f7">${serverElapsed > 0 ? Math.round(values.ocr_batch / serverElapsed * 100 * 10) / 10 : '—'}%</span>
+        <span style="color:#a371f7">${serverElapsed > 0 ? Math.round(values.ocr / serverElapsed * 100 * 10) / 10 : '—'}%</span>
       </div>
     </div>
   `;

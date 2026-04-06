@@ -175,12 +175,31 @@ def parse_number(text):
 def parse_card_text(text):
     """
     Parse OCR de uma carta. GGPoker mostra rank + suit gráfico.
-    Chandra pode ler: 'A♠', 'K♥', 'Ah', '10s', 'Td', etc.
+    Chandra pode ler: 'A♠', 'K♥', 'Ah', '10s', 'Td',
+                      'Ten of Clubs', 'Jack of Diamonds', etc.
     Retorna formato padronizado: 'Ah', 'Ks', 'Td', etc. ou '' se inválido.
     """
     if not text:
         return ''
     text = text.strip()
+
+    # ── Descrição em inglês: "Ten of Clubs", "Jack of Diamonds", "10 of Spades" ──
+    _rank_en = {'ace':'A','king':'K','queen':'Q','jack':'J','ten':'T',
+                'nine':'9','eight':'8','seven':'7','six':'6','five':'5',
+                'four':'4','three':'3','two':'2'}
+    _suit_en = {'spades':'s','spade':'s','hearts':'h','heart':'h',
+                'diamonds':'d','diamond':'d','clubs':'c','club':'c'}
+    m_en = re.search(
+        r'(ace|king|queen|jack|ten|nine|eight|seven|six|five|four|three|two|\d+)'
+        r'\s+of\s+(spades?|hearts?|diamonds?|clubs?)',
+        text, re.IGNORECASE
+    )
+    if m_en:
+        rr, sr = m_en.group(1).lower(), m_en.group(2).lower()
+        rank = _rank_en.get(rr) or ('T' if rr == '10' else rr if rr.isdigit() else '')
+        suit = _suit_en.get(sr, '')
+        if rank and suit:
+            return rank + suit
 
     # Mapeamento de suits (unicode/texto → letra)
     suit_map = {

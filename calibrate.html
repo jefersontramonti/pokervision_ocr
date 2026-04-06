@@ -84,6 +84,8 @@ h1{font-size:1.1rem;color:#fbbf24;margin-bottom:12px}
 <div class="server-panel">
   <label style="font-size:.8rem">OCR Server URL:</label>
   <input id="serverUrl" type="text" placeholder="https://xxx-8080.proxy.runpod.net" value="">
+  <label style="font-size:.8rem;margin-left:8px">API Key:</label>
+  <input id="apiKey" type="password" placeholder="opcional" style="width:120px">
   <button onclick="testServer()" style="margin-left:4px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:.8rem">🔌 Testar</button>
   <button onclick="loadFromServer()" style="margin-left:4px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:.8rem">📥 Carregar do Servidor</button>
   <span id="serverStatus" style="margin-left:8px;font-size:.75rem"></span>
@@ -399,13 +401,28 @@ function exportCoords() {
   document.getElementById('info').innerHTML = '<p style="color:#22c55e">✅ Arquivo ggpoker-coords.json exportado!</p>';
 }
 
+function authHeaders(extra) {
+  const key = document.getElementById('apiKey').value.trim();
+  const h = Object.assign({'Content-Type': 'application/json'}, extra || {});
+  if (key) h['X-API-Key'] = key;
+  return h;
+}
+
+function saveSettings() {
+  const url = document.getElementById('serverUrl').value.trim();
+  const key = document.getElementById('apiKey').value.trim();
+  if (url) localStorage.setItem('poker_vision_ocr_server', url);
+  if (key) localStorage.setItem('poker_vision_ocr_key', key);
+}
+
 async function sendToServer() {
   const url = document.getElementById('serverUrl').value.trim();
   if (!url) { alert('Preencha a URL do servidor'); return; }
+  saveSettings();
   try {
     const resp = await fetch(url + '/update-coords', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: authHeaders(),
       body: JSON.stringify(coords)
     });
     const data = await resp.json();
@@ -418,6 +435,7 @@ async function sendToServer() {
 async function testServer() {
   const url = document.getElementById('serverUrl').value.trim();
   if (!url) return;
+  saveSettings();
   try {
     const resp = await fetch(url + '/health', {signal: AbortSignal.timeout(3000)});
     const data = await resp.json();
@@ -430,8 +448,9 @@ async function testServer() {
 async function loadFromServer() {
   const url = document.getElementById('serverUrl').value.trim();
   if (!url) return;
+  saveSettings();
   try {
-    const resp = await fetch(url + '/get-coords');
+    const resp = await fetch(url + '/get-coords', {headers: authHeaders()});
     coords = await resp.json();
     buildRegionList();
     renderOverlays();
@@ -441,9 +460,11 @@ async function loadFromServer() {
   }
 }
 
-// Load saved server URL
+// Restore saved settings
 const savedUrl = localStorage.getItem('poker_vision_ocr_server');
+const savedKey = localStorage.getItem('poker_vision_ocr_key');
 if (savedUrl) document.getElementById('serverUrl').value = savedUrl;
+if (savedKey) document.getElementById('apiKey').value = savedKey;
 
 // Init
 buildRegionList();
