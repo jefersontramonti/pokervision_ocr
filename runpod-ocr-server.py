@@ -739,6 +739,9 @@ def analyze_table_mosaic(img_pil):
     t1 = time.time()
     labels   = [lbl for lbl, _ in mosaic_items]
     parsed   = parse_mosaic_text(ocr_text, labels)
+    print(f"  parsed labels: {list(parsed.keys())}")
+    for k, v in parsed.items():
+        print(f"    [{k}] = {repr(v[:80])}")
 
     # Montar table
     pos_map  = POS_MAPS.get(num_seats, POS_MAPS[8])
@@ -747,7 +750,8 @@ def analyze_table_mosaic(img_pil):
         'blinds': '', 'btn_seat': btn_seat_idx + 1 if btn_seat_idx >= 0 else -1,
         'num_active': 0, 'last_action': '', 'bet_to_call': 0,
         'tournament': True,
-        'ocr_raw': ocr_text[:600],  # debug
+        'ocr_raw': ocr_text,  # debug
+        'ocr_parsed': {},    # preenchido abaixo
     }
 
     if 'POT' in parsed:
@@ -794,6 +798,7 @@ def analyze_table_mosaic(img_pil):
 
     active_seats      = [s for s in seats if s['active']]
     table['num_active'] = len(active_seats)
+    table['ocr_parsed'] = {k: v[:120] for k, v in parsed.items()}
 
     # Ordenar por posição
     if btn_seat_idx >= 0:
