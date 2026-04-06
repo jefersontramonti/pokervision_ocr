@@ -569,9 +569,7 @@ def build_labeled_mosaic(regions):
         font = ImageFont.load_default()
 
     def crop_h(label):
-        if label.startswith('HC') or label.startswith('BD'):
-            return 120  # cartas: mais altura preserva naipes
-        return 60       # números / nomes
+        return 60       # texto uniforme — cartas já vêm pré-recortadas no canto
 
     total_h = sum(LABEL_H + crop_h(lbl) + GAP for lbl, _ in regions)
     mosaic  = Image.new('RGB', (MOSAIC_W, total_h), (255, 255, 255))
@@ -694,14 +692,21 @@ def analyze_table_mosaic(img_pil):
         mosaic_items.append((label, crop))
         label_map[label] = (tipo, idx)
 
+    def card_corner(img):
+        """Recorta só o canto superior da carta onde ficam rank+suit (ex: A♠).
+        Evita que Chandra entre em modo 'análise de imagem' (~28s → ~3s)."""
+        w, h = img.size
+        # Top 45% da altura cobre o símbolo de rank+suit no canto superior esquerdo
+        return img.crop((0, 0, w, max(1, int(h * 0.45))))
+
     # Pot
     if _valid_region(coords.get('pot')):
         add('POT', crop_region(img_pil, coords['pot']), 'pot')
 
-    # Board cards
+    # Board cards — só o canto superior (rank+suit)
     for i, r in enumerate(coords.get('board', [])):
         if _valid_region(r) and detect_seat_active(img_pil, r, is_hero=True):
-            add(f'BD{i+1}', crop_region(img_pil, r), 'board', i)
+            add(f'BD{i+1}', card_corner(crop_region(img_pil, r)), 'board', i)
 
     # Stacks de todos os seats ativos + hero cards
     for i, sr in enumerate(seat_regions):
@@ -709,9 +714,9 @@ def analyze_table_mosaic(img_pil):
             continue
         if _valid_region(sr.get('stack')):
             add(f'ST{i}', crop_region(img_pil, sr['stack']), 'stack', i)
-        # Cartas do hero: manda as 2 juntas em 1 crop (mais contexto para OCR)
+        # Cartas do hero — só canto superior de cada carta
         if i == 0 and _valid_region(sr.get('cards')):
-            add('HCC', crop_region(img_pil, sr['cards']), 'cards', 0)
+            add('HCC', card_corner(crop_region(img_pil, sr['cards'])), 'cards', 0)
         # Nomes para todos os ativos
         if _valid_region(sr.get('name')):
             add(f'NM{i}', crop_region(img_pil, sr['name']), 'name', i)
