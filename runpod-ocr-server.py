@@ -102,6 +102,279 @@ def ocr_single(img):
     return results[0] if results else ''
 
 
+# ============ OCR ENGINE — EasyOCR (rápido, GPU) ============
+
+_easyocr_reader = None
+
+def get_easyocr_reader():
+    """Lazy-load EasyOCR com GPU. ~5s no primeiro call, depois instantâneo."""
+    global _easyocr_reader
+    if _easyocr_reader is None:
+        print("🔄 Carregando EasyOCR (GPU)…")
+        t0 = time.time()
+        try:
+            import easyocr
+            _easyocr_reader = easyocr.Reader(['en'], gpu=True, verbose=False)
+            print(f"✅ EasyOCR pronto em {time.time()-t0:.1f}s")
+        except Exception as e:
+            print(f"⚠️  EasyOCR não disponível: {e}")
+            _easyocr_reader = None
+    return _easyocr_reader
+
+
+def _easyocr_read(pil_img):
+    """Lê texto de uma imagem PIL com EasyOCR. Retorna string limpa."""
+    reader = get_easyocr_reader()
+    if reader is None:
+        return ''
+    try:
+        arr = np.array(pil_img.convert('RGB'))
+        results = reader.readtext(arr, detail=0, paragraph=False)
+        return ' '.join(str(r) for r in results).strip()
+    except Exception as e:
+        print(f"  EasyOCR erro: {e}")
+        return ''
+
+
+# ── Detecção de carta: rank via EasyOCR + suit via cor/forma ─────────
+
+_RANK_VALID = set('AKQJT98765432')
+
+
+def _card_rank(card_img):
+    """Lê o rank da carta (canto superior esquerdo)."""
+    w, h = card_img.size
+    corner = card_img.crop((0, 0, max(1, int(w * 0.40)), max(1, int(h * 0.50))))
+    raw = _easyocr_read(corner).upper().replace(' ', '')
+    if '10' in raw or 'IO' in raw or '1O' in raw:
+        return 'T'
+    for ch in raw:
+        if ch in _RANK_VALID:
+            return ch
+    return ''
+
+
+def _card_suit(card_img):
+    """
+    Detecta o naipe por análise de cor + forma (sem modelo).
+    Suporta deck 2 cores (♥♦=vermelho, ♠♣=preto)
+    e deck 4 cores GGPoker (♦=azul, ♣=verde).
+    """
+    arr = np.array(card_img.convert('RGB')).astype(np.float32)
+    r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+    n = float(max(arr.shape[0] * arr.shape[1], 1))
+
+    red_pct   = float(np.sum((r > 160) & (g < 110) & (b < 110)) / n)
+    blue_pct  = float(np.sum((b > 140) & (r < 120) & (g < 160)) / n)
+    green_pct = float(np.sum((g > 140) & (r < 120) & (b < 120)) / n)
+    dark_pct  = float(np.sum((r < 80)  & (g < 80)  & (b < 80))  / n)
+
+    # Deck 4 cores GGPoker (diamante=azul, paus=verde)
+    if blue_pct > 0.015 and blue_pct > red_pct:
+        return 'd'
+    if green_pct > 0.015 and green_pct > red_pct and green_pct > dark_pct:
+        return 'c'
+
+    if red_pct > 0.015 and red_pct >= dark_pct:
+        # Vermelho: Hearts vs Diamonds
+        mask = (r > 160) & (g < 110) & (b < 110)
+        rows = [int(np.sum(mask[i])) for i in range(mask.shape[0])]
+        rows_nz = [w for w in rows if w > 0]
+        if not rows_nz:
+            return 'h'
+        top_w = rows_nz[0]
+        max_w = max(rows_nz)
+        # Diamond: topo pontiagudo (top_w << max_w)
+        return 'd' if top_w < max_w * 0.20 else 'h'
+
+    if dark_pct > 0.015:
+        # Preto: Spades vs Clubs
+        try:
+            import cv2
+            mask = ((arr[:, :, 0] < 80) & (arr[:, :, 1] < 80) & (arr[:, :, 2] < 80)).astype(np.uint8)
+            h_img = mask.shape[0]
+            top   = mask[:int(h_img * 0.70), :] * 255
+            n_labels, _ = cv2.connectedComponents(top)
+            # Clubs: 3 círculos = 3+ componentes; Spades: 1-2
+            return 'c' if (n_labels - 1) >= 3 else 's'
+        except Exception:
+            return 's'
+
+    return ''
+
+
+def detect_card_fast(card_img):
+    """Detecta uma carta (rank + suit). Ex: 'Ah', 'Td', ''."""
+    rank = _card_rank(card_img)
+    suit = _card_suit(card_img)
+    return (rank + suit) if (rank and suit) else ''
+
+
+# ============ ANÁLISE RÁPIDA — EasyOCR + pixel analysis ============
+
+def analyze_table_fast(img_pil):
+    """
+    Análise rápida: EasyOCR (GPU) para texto + análise de cor/forma para cartas.
+    Alvo: ~2-4s na RTX 4090 vs 25s do mosaico Chandra.
+
+    Fluxo:
+      1. Detecção pixel: dealer button + seats ativos
+      2. Recorte das regiões calibradas
+      3. EasyOCR em paralelo nos crops de texto (pot, stacks, nomes)
+      4. detect_card_fast para cada carta (rank EasyOCR + suit pixel)
+      5. Montagem do resultado
+    """
+    coords       = active_coords or load_coords()
+    num_seats    = int(coords.get('seats', 8))
+    seat_regions = coords.get('seat_regions', [])
+
+    t0 = time.time()
+    timings = {}
+
+    # ── Fase 1: Dealer + seats ativos (pixel, sem OCR) ─────────────
+    t1 = time.time()
+    dealer_regions = [s.get('dealer') for s in seat_regions]
+    btn_seat_idx   = detect_dealer_button(img_pil, dealer_regions)
+    timings['dealer'] = f"{(time.time()-t1)*1000:.0f}ms"
+
+    t1 = time.time()
+    seat_active = [
+        detect_seat_active(img_pil, sr.get('cards', {}), is_hero=(i == 0))
+        for i, sr in enumerate(seat_regions)
+    ]
+    timings['detect'] = f"{(time.time()-t1)*1000:.0f}ms"
+
+    # ── Fase 2: Recortes ────────────────────────────────────────────
+    t1 = time.time()
+    pot_img = crop_region(img_pil, coords['pot']) if _valid_region(coords.get('pot')) else None
+
+    board_imgs = []
+    for r in coords.get('board', []):
+        if _valid_region(r) and detect_seat_active(img_pil, r, is_hero=True):
+            board_imgs.append(crop_region(img_pil, r))
+        else:
+            board_imgs.append(None)
+
+    seat_imgs = []
+    for i, sr in enumerate(seat_regions):
+        act = seat_active[i]
+        seat_imgs.append({
+            'name':  crop_region(img_pil, sr['name'])  if act and _valid_region(sr.get('name'))  else None,
+            'stack': crop_region(img_pil, sr['stack']) if act and _valid_region(sr.get('stack')) else None,
+            'cards': crop_region(img_pil, sr['cards']) if act and _valid_region(sr.get('cards')) else None,
+        })
+    timings['crop'] = f"{(time.time()-t1)*1000:.0f}ms"
+
+    # ── Fase 3: OCR + detecção de cartas ───────────────────────────
+    t1 = time.time()
+    ocr_data = {}
+
+    # Texto (EasyOCR): pot, nomes, stacks
+    reader = get_easyocr_reader()
+    if reader:
+        text_pairs = []
+        if pot_img:
+            text_pairs.append(('pot', pot_img))
+        for i, si in enumerate(seat_imgs):
+            if si.get('name'):
+                text_pairs.append((f'nm{i}', si['name']))
+            if si.get('stack'):
+                text_pairs.append((f'st{i}', si['stack']))
+
+        for key, img in text_pairs:
+            ocr_data[key] = _easyocr_read(img)
+
+    # Cartas do board (rank EasyOCR + suit pixel)
+    board_cards = [detect_card_fast(img) if img else None for img in board_imgs]
+
+    # Cartas do hero: cortar ao meio (c1=esquerda, c2=direita)
+    hero_c1, hero_c2 = '', ''
+    hero_img = seat_imgs[0].get('cards') if seat_imgs else None
+    if hero_img:
+        w, h = hero_img.size
+        hero_c1 = detect_card_fast(hero_img.crop((0, 0, w // 2, h)))
+        hero_c2 = detect_card_fast(hero_img.crop((w // 2, 0, w, h)))
+
+    timings['ocr'] = f"{(time.time()-t1)*1000:.0f}ms"
+
+    # ── Fase 4: Montar resultado ────────────────────────────────────
+    t1 = time.time()
+    pos_map = POS_MAPS.get(num_seats, POS_MAPS[8])
+
+    pot     = parse_number(ocr_data.get('pot', ''))
+    board   = [c for c in board_cards if c]
+    n_board = len(board)
+    street  = {0: 'preflop', 3: 'flop', 4: 'turn', 5: 'river'}.get(n_board, 'preflop')
+
+    seats = []
+    for i, sr in enumerate(seat_regions):
+        is_hero  = (i == 0)
+        active   = seat_active[i]
+        name     = ocr_data.get(f'nm{i}', '').strip() or ('Hero' if is_hero else f'Player{i+1}')
+        st_text  = ocr_data.get(f'st{i}', '')
+        stack    = parse_number(st_text)
+        all_in   = bool(re.search(r'all.?in', st_text, re.IGNORECASE))
+
+        if re.search(r'sit.?out|sitting', name, re.IGNORECASE):
+            active = False
+
+        position = '?'
+        if btn_seat_idx >= 0:
+            position = pos_map[(num_seats - btn_seat_idx + i) % num_seats]
+
+        seats.append({
+            'seat':     i + 1,
+            'id':       sr.get('id',    f'seat_{i+1}'),
+            'label':    sr.get('label', f'Seat {i+1}'),
+            'name':     name,
+            'stack':    stack,
+            'all_in':   all_in,
+            'cards':    [hero_c1, hero_c2] if is_hero else ['', ''],
+            'position': position,
+            'bet':      0,
+            'bounty':   '',
+            'is_hero':  is_hero,
+            'active':   active,
+            'action':   '',
+        })
+
+    active_seats = [s for s in seats if s['active']]
+
+    # Ordenar por posição
+    if btn_seat_idx >= 0:
+        for s in seats:
+            s['_po'] = pos_map.index(s['position']) if s['position'] in pos_map else 99
+        seats.sort(key=lambda s: s['_po'])
+        for s in seats:
+            s.pop('_po', None)
+
+    timings['parse'] = f"{(time.time()-t1)*1000:.0f}ms"
+    elapsed = time.time() - t0
+
+    print(f"\n✅ Fast análise em {elapsed:.1f}s | Board: {board} | Pot: {pot}")
+    for s in seats:
+        if s['active']:
+            print(f"  [{s['id']:13s}] {s['position']:6s} {s['name']:15s} stack={s['stack']} all_in={s.get('all_in')} cards={s['cards']}")
+
+    table = {
+        'pot':         pot,
+        'board':       board,
+        'street':      street,
+        'blinds':      '',
+        'btn_seat':    btn_seat_idx + 1 if btn_seat_idx >= 0 else -1,
+        'num_active':  len(active_seats),
+        'last_action': '',
+        'bet_to_call': 0,
+        'tournament':  True,
+        'ocr_parsed':  {k: v[:120] for k, v in ocr_data.items()},
+    }
+
+    success = bool(board or any(
+        s['name'] not in ('Hero', f"Player{s['seat']}") for s in seats
+    ))
+    return {'table': table, 'seats': seats, 'timings': timings}, elapsed
+
+
 def crop_region(img_pil, region):
     """
     Recorta região da imagem. Retorna PIL Image.
@@ -1116,12 +1389,14 @@ def health():
     seat_ids = [sr.get('id', f'seat_{i+1}') for i, sr in enumerate(coords.get('seat_regions', []))]
     return jsonify({
         'status': 'ok',
-        'ocr_engine': 'Chandra OCR 2',
+        'ocr_engine': 'EasyOCR' if _easyocr_reader else ('Chandra OCR 2' if _ocr_manager else 'none'),
         'gpu': gpu_name,
         'preset': coords.get('name', 'custom'),
         'seats': coords.get('seats', 8),
         'seat_ids': seat_ids,
-        'ocr_ready': _ocr_manager is not None,
+        'ocr_ready': _easyocr_reader is not None or _ocr_manager is not None,
+        'easyocr_ready': _easyocr_reader is not None,
+        'chandra_ready': _ocr_manager is not None,
     })
 
 
@@ -1130,8 +1405,14 @@ def warmup():
     if not check_auth():
         return jsonify({'error': 'unauthorized'}), 401
     t0 = time.time()
-    get_ocr_manager()
-    return jsonify({'status': 'ready', 'elapsed': f"{time.time()-t0:.1f}s"})
+    get_easyocr_reader()   # carrega EasyOCR (engine principal)
+    get_ocr_manager()      # carrega Chandra (fallback opcional)
+    return jsonify({
+        'status': 'ready',
+        'elapsed': f"{time.time()-t0:.1f}s",
+        'easyocr': _easyocr_reader is not None,
+        'chandra': _ocr_manager is not None,
+    })
 
 
 @app.route('/analyze', methods=['POST'])
@@ -1151,13 +1432,17 @@ def analyze():
     print(f"\n{'='*60}")
     print(f"📸 Nova análise — imagem {img_pil.size[0]}x{img_pil.size[1]}")
 
-    # Mosaico rotulado: 1 imagem → 1 OCR call → todos os dados
-    # use_batch=true força o modo antigo (24 crops separados)
-    use_batch = data.get('use_batch', False)
+    # Fast mode (EasyOCR + pixel): padrão
+    # use_chandra=true → mosaico Chandra (mais lento mas mais robusto)
+    # use_batch=true   → batch Chandra antigo (fallback)
+    use_chandra = data.get('use_chandra', False)
+    use_batch   = data.get('use_batch',   False)
     if use_batch:
         analysis, elapsed = analyze_table(img_pil)
-    else:
+    elif use_chandra:
         analysis, elapsed = analyze_table_mosaic(img_pil)
+    else:
+        analysis, elapsed = analyze_table_fast(img_pil)
 
     # Override dealer se frontend enviou manualmente
     if 'btn_seat_idx' in data and data['btn_seat_idx'] >= 0:
